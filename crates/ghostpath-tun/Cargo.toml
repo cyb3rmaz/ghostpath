@@ -1,0 +1,20 @@
+[package]
+name = "ghostpath-tun"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Async TUN device manager and packet processor for GhostPath VPN"
+
+[lints]
+workspace = true
+
+[dependencies]
+ghostpath-core = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true }
