@@ -231,7 +231,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       : 'text-[#8A9990] hover:text-[#ECF2EE]'
                   }`}
                 >
-                  TUN (tun0)
+                  TUN (ghost0)
                 </button>
                 <button
                   type="button"
@@ -301,7 +301,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             <div>
               <div className="text-[#78887F]">Local Bind</div>
               <div className="font-mono tabular-nums text-[#ECF2EE] mt-0.5">
-                {interfaceMode === 'tun' ? '10.8.0.42 (tun0)' : `127.0.0.1:${socksPort}`}
+                {interfaceMode === 'tun' ? '10.8.0.2 (ghost0)' : `127.0.0.1:${socksPort}`}
               </div>
             </div>
             <div>

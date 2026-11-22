@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Pause, Play, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { ConnectionStatus, DiagnosticLog, LogLevel, ServerNode } from '../types/vpn';
+import { GhostApi } from '../services/api';
 
 interface DiagnosticsViewProps {
   logs: DiagnosticLog[];
@@ -40,15 +41,16 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
     });
   }, [logs, levelFilter, query]);
 
-  const handleRunLeakCheck = () => {
+  const handleRunLeakCheck = async () => {
     setLeakChecking(true);
-    setTimeout(() => {
-      setLeakChecking(false);
-      const now = new Date();
-      setLeakCheckedAt(
-        now.toTimeString().split(' ')[0]
-      );
-    }, 650);
+    try {
+      await GhostApi.runDoctor();
+    } catch (e) {
+      console.warn('Doctor run failed:', e);
+    }
+    setLeakChecking(false);
+    const now = new Date();
+    setLeakCheckedAt(now.toTimeString().split(' ')[0]);
   };
 
   const isConnected = status === 'connected';

@@ -86,7 +86,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div>
             <div className="text-sm font-medium text-[#ECF2EE]">nftables Kill Switch</div>
             <div className="text-xs text-[#8A9990] mt-0.5">
-              Drop non-tunnel outbound packets if tun0 drops unexpectedly
+              Drop non-tunnel outbound packets if ghost0 drops unexpectedly
             </div>
           </div>
           <button
@@ -134,7 +134,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div>
             <div className="text-sm font-medium text-[#ECF2EE]">Route IPv6 Traffic</div>
             <div className="text-xs text-[#8A9990] mt-0.5">
-              Enable dual-stack tun0 interface; disable to suppress AAAA leak risk
+              Enable dual-stack ghost0 interface; disable to suppress AAAA leak risk
             </div>
           </div>
           <button

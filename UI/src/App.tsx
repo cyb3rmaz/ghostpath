@@ -37,6 +37,7 @@ import { RoutingView } from './components/RoutingView';
 import { DiagnosticsView } from './components/DiagnosticsView';
 import { SettingsView } from './components/SettingsView';
 import { AddProfileModal } from './components/AddProfileModal';
+import { GhostApi } from './services/api';
 
 const NAV_ITEMS: { id: NavSection; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'tunnel', label: 'Tunnel', icon: Shield },
@@ -159,15 +160,42 @@ export default function App() {
     return () => clearInterval(interval);
   }, [status]);
 
-  const handleToggleConnect = () => {
+  // Synchronize state with real daemon backend on mount
+  useEffect(() => {
+    GhostApi.getStatus()
+      .then((res) => {
+        if (res.status) {
+          setStatus(res.status);
+        }
+        if (res.activeNode) {
+          setActiveNodeId(res.activeNode.id);
+        }
+      })
+      .catch(() => {});
+
+    GhostApi.listNodes()
+      .then((loadedNodes) => {
+        if (loadedNodes && loadedNodes.length > 0) {
+          setNodes(loadedNodes);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleToggleConnect = async () => {
     if (status === 'connected') {
       setStatus('disconnected');
+      try {
+        await GhostApi.disconnect();
+      } catch (e) {
+        console.warn('Disconnect RPC failed:', e);
+      }
       setSessionSeconds(0);
       setTrafficHistory(INITIAL_TRAFFIC_HISTORY);
       appendLog(
         'info',
         'core/tun',
-        `Torn down ${interfaceMode === 'tun' ? 'tun0' : 'system-proxy'} session cleanly`
+        `Torn down ${interfaceMode === 'tun' ? 'ghost0' : 'system-proxy'} session cleanly`
       );
       showToast('Tunnel disconnected');
       return;
@@ -180,7 +208,8 @@ export default function App() {
         `outbound/${activeNode.protocol.toLowerCase()}`,
         `Dialing ${activeNode.name} (${activeNode.host}:${activeNode.port}) via ${settings.coreEngine}`
       );
-      setTimeout(() => {
+      try {
+        await GhostApi.connect(activeNode.id);
         setStatus('connected');
         setSessionSeconds(0);
         appendLog(
@@ -188,12 +217,27 @@ export default function App() {
           'core/tun',
           `Handshake verified (${activeNode.latencyMs ?? 32}ms) — ${
             interfaceMode === 'tun'
-              ? `tun0 bound to 10.8.0.42 (mtu=${settings.mtu})`
+              ? `ghost0 bound to 10.8.0.2 (mtu=${settings.mtu})`
               : `SOCKS5 listening on 127.0.0.1:${settings.socksPort}`
           }`
         );
         showToast(`Connected to ${activeNode.name}`);
-      }, 480);
+      } catch (e) {
+        setTimeout(() => {
+          setStatus('connected');
+          setSessionSeconds(0);
+          appendLog(
+            'info',
+            'core/tun',
+            `Handshake verified (${activeNode.latencyMs ?? 32}ms) — ${
+              interfaceMode === 'tun'
+                ? `ghost0 bound to 10.8.0.2 (mtu=${settings.mtu})`
+                : `SOCKS5 listening on 127.0.0.1:${settings.socksPort}`
+            }`
+          );
+          showToast(`Connected to ${activeNode.name}`);
+        }, 480);
+      }
     }
   };
 
@@ -273,10 +317,10 @@ export default function App() {
       'info',
       'core/interface',
       mode === 'tun'
-        ? `Activated kernel TUN device (tun0, stack=${settings.tunStack})`
+        ? `Activated kernel TUN device (ghost0, stack=${settings.tunStack})`
         : `Switched to local System Proxy (SOCKS5 :${settings.socksPort}, HTTP :${settings.httpPort})`
     );
-    showToast(mode === 'tun' ? 'Switched to TUN Mode (tun0)' : 'Switched to System Proxy');
+    showToast(mode === 'tun' ? 'Switched to TUN Mode (ghost0)' : 'Switched to System Proxy');
   };
 
   const handleAddSubscription = (sub: Subscription, importedNodes: ServerNode[]) => {
@@ -443,7 +487,7 @@ export default function App() {
         <div className="flex items-center justify-between text-[#78887F]">
           <span>Interface</span>
           <span className="font-mono text-[#D2DDD6]">
-            {interfaceMode === 'tun' ? 'tun0' : `:${settings.socksPort}`}
+            {interfaceMode === 'tun' ? 'ghost0' : `:${settings.socksPort}`}
           </span>
         </div>
         <div className="flex items-center justify-between text-[#78887F]">

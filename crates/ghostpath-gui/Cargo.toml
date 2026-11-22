@@ -8,9 +8,16 @@ description = "Desktop UI bridge and packaging for GhostPath VPN"
 [lints]
 workspace = true
 
+[[bin]]
+name = "ghostpath-gui"
+path = "src/main.rs"
+
 [dependencies]
 ghostpath-core = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
