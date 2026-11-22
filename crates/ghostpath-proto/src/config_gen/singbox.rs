@@ -1,4 +1,5 @@
-use ghostpath_core::models::{NodeProtocol, ServerNode};
+use ghostpath_core::models::{NodeProtocol, RoutingRule, RuleAction, RuleType, ServerNode};
+use ghostpath_core::rules::default_routing_rules;
 use ghostpath_core::Result;
 use serde_json::{json, Value};
 
@@ -13,6 +14,7 @@ pub struct SingBoxConfigOptions {
     pub socks_port: u16,
     pub http_port: u16,
     pub routing_mark: u32,
+    pub rules: Vec<RoutingRule>,
 }
 
 impl Default for SingBoxConfigOptions {
@@ -21,12 +23,70 @@ impl Default for SingBoxConfigOptions {
             socks_port: 10808,
             http_port: 10809,
             routing_mark: GHOST_FWMARK,
+            rules: default_routing_rules(),
         }
     }
 }
 
 pub fn generate_singbox_config(node: &ServerNode, options: &SingBoxConfigOptions) -> Result<Value> {
     let outbound = build_outbound(node, options.routing_mark)?;
+
+    let mut route_rules = Vec::new();
+    let rules_to_apply = if options.rules.is_empty() {
+        default_routing_rules()
+    } else {
+        options.rules.clone()
+    };
+
+    for rule in rules_to_apply {
+        if !rule.enabled {
+            continue;
+        }
+        let target_outbound = match rule.action {
+            RuleAction::Direct => "direct",
+            RuleAction::Block => "block",
+            RuleAction::Proxy => "proxy",
+        };
+
+        match rule.r#type {
+            RuleType::Geosite => {
+                route_rules.push(json!({
+                    "geosite": [rule.pattern],
+                    "outbound": target_outbound
+                }));
+            }
+            RuleType::Geoip => {
+                route_rules.push(json!({
+                    "geoip": [rule.pattern],
+                    "outbound": target_outbound
+                }));
+            }
+            RuleType::Domain => {
+                route_rules.push(json!({
+                    "domain_suffix": [rule.pattern],
+                    "outbound": target_outbound
+                }));
+            }
+            RuleType::Cidr => {
+                route_rules.push(json!({
+                    "ip_cidr": [rule.pattern],
+                    "outbound": target_outbound
+                }));
+            }
+            RuleType::Process => {
+                route_rules.push(json!({
+                    "process_name": [rule.pattern],
+                    "outbound": target_outbound
+                }));
+            }
+        }
+    }
+
+    // Default fallback rule
+    route_rules.push(json!({
+        "inbound": ["socks-in", "mixed-in"],
+        "outbound": "proxy"
+    }));
 
     let config = json!({
         "log": {
@@ -60,12 +120,7 @@ pub fn generate_singbox_config(node: &ServerNode, options: &SingBoxConfigOptions
             }
         ],
         "route": {
-            "rules": [
-                {
-                    "inbound": ["socks-in", "mixed-in"],
-                    "outbound": "proxy"
-                }
-            ],
+            "rules": route_rules,
             "auto_detect_interface": true
         }
     });
@@ -203,6 +258,11 @@ mod tests {
         assert_eq!(config["outbounds"][0]["type"], "vless");
         assert_eq!(config["outbounds"][0]["routing_mark"], 18256);
         assert_eq!(config["outbounds"][0]["tls"]["reality"]["enabled"], true);
+        let rules = config["route"]["rules"].as_array().unwrap();
+        assert!(rules.len() >= 4);
+        assert!(rules
+            .iter()
+            .any(|r| r.get("geosite").map(|g| g[0] == "ir").unwrap_or(false)));
         assert_eq!(
             config["outbounds"][0]["tls"]["reality"]["public_key"],
             "Z3b7K_sample"

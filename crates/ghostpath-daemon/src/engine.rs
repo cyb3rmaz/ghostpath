@@ -1,7 +1,11 @@
+use crate::doctor::SystemDoctor;
 use anyhow::{bail, Result};
 use ghostpath_core::models::{ConnectionStatus, NodeProtocol, ServerNode};
 use ghostpath_core::GhostConfig;
-use ghostpath_net::{DnsGuard, DnsManager, DnsProxy, RouteGuard, RouteManager, UndoJournal};
+use ghostpath_net::{
+    DnsGuard, DnsManager, DnsProxy, KillSwitch, KillSwitchGuard, RouteGuard, RouteManager,
+    UndoJournal,
+};
 use ghostpath_proto::{parse_any_link, ManagedCoreOutbound, Outbound};
 use ghostpath_tun::TunDevice;
 use serde::{Deserialize, Serialize};
@@ -26,6 +30,7 @@ pub struct ActiveSession {
     pub route_guard: Option<RouteGuard>,
     pub dns_guard: Option<DnsGuard>,
     pub dns_proxy: Option<DnsProxy>,
+    pub killswitch_guard: Option<KillSwitchGuard>,
     pub tun_device: Option<TunDevice>,
     pub core_process: Option<ManagedCoreOutbound>,
 }
@@ -106,82 +111,100 @@ impl DaemonEngine {
 
         info!(node_id = %node.id, name = %node.name, "Establishing GhostPath VPN tunnel");
 
-        let (tun_device, route_guard, dns_guard, dns_proxy, core_process) = if !self.dry_run {
-            // 1. Open TUN device
-            let mut tun = TunDevice::new("ghost0", config.settings.mtu);
-            let tun_opt = match tun.open().await {
-                Ok(()) => {
-                    info!("TUN interface ghost0 created and opened successfully");
-                    Some(tun)
-                }
-                Err(e) => {
-                    warn!("Could not open kernel TUN interface: {}", e);
-                    None
-                }
-            };
+        let (tun_device, route_guard, dns_guard, dns_proxy, killswitch_guard, core_process) =
+            if !self.dry_run {
+                // 1. Open TUN device
+                let mut tun = TunDevice::new("ghost0", config.settings.mtu);
+                let tun_opt = match tun.open().await {
+                    Ok(()) => {
+                        info!("TUN interface ghost0 created and opened successfully");
+                        Some(tun)
+                    }
+                    Err(e) => {
+                        warn!("Could not open kernel TUN interface: {}", e);
+                        None
+                    }
+                };
 
-            // 2. Setup Policy Routing & Netlink rules
-            let mut rm = RouteManager::new(self.dry_run);
-            let rg = match rm.apply_routing("ghost0", config.settings.ipv6_routing) {
-                Ok(guard) => {
-                    info!(
+                // 2. Setup Policy Routing & Netlink rules
+                let mut rm = RouteManager::new(self.dry_run);
+                let rg = match rm.apply_routing("ghost0", config.settings.ipv6_routing) {
+                    Ok(guard) => {
+                        info!(
                         "Policy routing installed: fwmark 0x4750, table 5180, priority 5180/5181"
                     );
-                    Some(guard)
+                        Some(guard)
+                    }
+                    Err(e) => {
+                        warn!("Could not apply policy routing: {}", e);
+                        None
+                    }
+                };
+
+                // 3. Configure DNS and prevent leaks
+                let mut journal = UndoJournal::default();
+                let mut dm = DnsManager::new(
+                    &config.settings.dns_primary,
+                    &config.settings.dns_fallback,
+                    self.dry_run,
+                );
+                let dg = match dm.apply_dns("ghost0", &mut journal) {
+                    Ok(guard) => {
+                        info!("DNS routing configured via systemd-resolved '~.'");
+                        Some(guard)
+                    }
+                    Err(e) => {
+                        warn!("Could not apply DNS configuration: {}", e);
+                        None
+                    }
+                };
+
+                // 4. Start local encrypted DNS proxy
+                let dp = DnsProxy::new(10853, "https://1.1.1.1/dns-query");
+                let dp_opt = match dp.start().await {
+                    Ok(()) => {
+                        info!("Internal DoH proxy active on 127.0.0.1:10853");
+                        Some(dp)
+                    }
+                    Err(e) => {
+                        warn!("Could not start internal DNS proxy: {}", e);
+                        None
+                    }
+                };
+
+                // 5. Start supervised core outbound with fwmark 18256 (0x4750)
+                let mut core = ManagedCoreOutbound::new(
+                    config.settings.core_engine,
+                    config.settings.socks_port,
+                    config.settings.http_port,
+                    18256,
+                );
+                if let Err(e) = core.start(&node).await {
+                    warn!("Could not start managed proxy core: {}", e);
                 }
-                Err(e) => {
-                    warn!("Could not apply policy routing: {}", e);
+
+                // 6. Setup nftables kill switch if configured
+                let ks = if config.settings.kill_switch {
+                    match KillSwitch::enable(self.dry_run, config.settings.allow_lan, &mut journal)
+                    {
+                        Ok(guard) => {
+                            info!("Strict nftables kill switch active in table inet ghostpath");
+                            Some(guard)
+                        }
+                        Err(e) => {
+                            warn!("Could not activate kill switch: {}", e);
+                            None
+                        }
+                    }
+                } else {
                     None
-                }
+                };
+
+                (tun_opt, rg, dg, dp_opt, ks, Some(core))
+            } else {
+                info!("Dry-run mode: simulating tunnel setup");
+                (None, None, None, None, None, None)
             };
-
-            // 3. Configure DNS and prevent leaks
-            let mut journal = UndoJournal::default();
-            let mut dm = DnsManager::new(
-                &config.settings.dns_primary,
-                &config.settings.dns_fallback,
-                self.dry_run,
-            );
-            let dg = match dm.apply_dns("ghost0", &mut journal) {
-                Ok(guard) => {
-                    info!("DNS routing configured via systemd-resolved '~.'");
-                    Some(guard)
-                }
-                Err(e) => {
-                    warn!("Could not apply DNS configuration: {}", e);
-                    None
-                }
-            };
-
-            // 4. Start local encrypted DNS proxy
-            let dp = DnsProxy::new(10853, "https://1.1.1.1/dns-query");
-            let dp_opt = match dp.start().await {
-                Ok(()) => {
-                    info!("Internal DoH proxy active on 127.0.0.1:10853");
-                    Some(dp)
-                }
-                Err(e) => {
-                    warn!("Could not start internal DNS proxy: {}", e);
-                    None
-                }
-            };
-
-            // 5. Start supervised core outbound with fwmark 18256 (0x4750)
-            let mut core = ManagedCoreOutbound::new(
-                config.settings.core_engine,
-                config.settings.socks_port,
-                config.settings.http_port,
-                18256,
-            );
-            if let Err(e) = core.start(&node).await {
-                warn!("Could not start managed proxy core: {}", e);
-            }
-
-            (tun_opt, rg, dg, dp_opt, Some(core))
-        } else {
-            info!("Dry-run mode: simulating tunnel setup");
-            (None, None, None, None, None)
-        };
 
         let session = ActiveSession {
             node: node.clone(),
@@ -189,6 +212,7 @@ impl DaemonEngine {
             route_guard,
             dns_guard,
             dns_proxy,
+            killswitch_guard,
             tun_device,
             core_process,
         };
@@ -226,7 +250,8 @@ impl DaemonEngine {
             if let Some(dp) = session.dns_proxy.take() {
                 dp.stop();
             }
-            // Drop dns_guard and route_guard to trigger automatic restoration
+            // Drop guards to trigger automatic restoration
+            drop(session.killswitch_guard.take());
             drop(session.dns_guard.take());
             drop(session.route_guard.take());
             drop(session.tun_device.take());
@@ -357,51 +382,8 @@ impl DaemonEngine {
     }
 
     pub async fn run_doctor(&self) -> Result<serde_json::Value> {
-        let tun_accessible = std::path::Path::new("/dev/net/tun").exists();
-        let is_root = {
-            #[cfg(unix)]
-            {
-                nix::unistd::Uid::current().is_root()
-            }
-            #[cfg(not(unix))]
-            {
-                false
-            }
-        };
-
-        let resolved_active = std::path::Path::new("/run/systemd/resolve/resolv.conf").exists()
-            || std::path::Path::new("/run/systemd/resolve/stub-resolv.conf").exists();
-
-        let docker_active = std::path::Path::new("/sys/class/net/docker0").exists();
-
-        Ok(serde_json::json!({
-            "checks": [
-                {
-                    "id": "tun",
-                    "name": "Kernel TUN Device (/dev/net/tun)",
-                    "passed": tun_accessible,
-                    "fix": if !tun_accessible { Some("Run 'sudo modprobe tun' or verify /dev/net/tun permissions") } else { None }
-                },
-                {
-                    "id": "privs",
-                    "name": "Daemon Capabilities / Privileges",
-                    "passed": is_root,
-                    "fix": if !is_root { Some("Run ghostpathd as root or grant CAP_NET_ADMIN capabilities") } else { None }
-                },
-                {
-                    "id": "dns",
-                    "name": "systemd-resolved Integration",
-                    "passed": resolved_active,
-                    "fix": if !resolved_active { Some("systemd-resolved not active; fallback to /etc/resolv.conf will be used") } else { None }
-                },
-                {
-                    "id": "docker",
-                    "name": "Docker Bridge Interference (docker0)",
-                    "passed": true,
-                    "fix": if docker_active { Some("docker0 detected; handled automatically by ghostpath exclusion rules") } else { None }
-                }
-            ]
-        }))
+        let report = SystemDoctor::run_diagnostics();
+        Ok(serde_json::to_value(&report)?)
     }
 }
 

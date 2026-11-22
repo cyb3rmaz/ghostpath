@@ -86,6 +86,7 @@ impl Outbound for ManagedCoreOutbound {
             socks_port: self.socks_port,
             http_port: self.http_port,
             routing_mark: self.routing_mark,
+            rules: vec![],
         };
 
         let config_json = generate_singbox_config(node, &options)?;
