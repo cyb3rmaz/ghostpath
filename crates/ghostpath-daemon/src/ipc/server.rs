@@ -39,9 +39,20 @@ impl IpcServer {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o660);
+            let perms = std::fs::Permissions::from_mode(0o666);
             if let Err(e) = std::fs::set_permissions(&self.socket_path, perms) {
-                warn!("Could not set socket permissions to 0660: {}", e);
+                warn!("Could not set socket permissions to 0666: {}", e);
+            }
+
+            // Attempt to assign group ownership to 'ghostpath' if it exists
+            if let Ok(Some(group)) = nix::unistd::Group::from_name("ghostpath") {
+                if let Err(e) = nix::unistd::chown(
+                    &self.socket_path,
+                    None,
+                    Some(group.gid),
+                ) {
+                    debug!("Could not chown socket to ghostpath group: {}", e);
+                }
             }
         }
 

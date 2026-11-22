@@ -6,6 +6,11 @@ if ! getent group ghostpath >/dev/null; then
     groupadd --system ghostpath
 fi
 
+# Add invoking sudo user to ghostpath group if available
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    usermod -aG ghostpath "$SUDO_USER" >/dev/null 2>&1 || true
+fi
+
 # Reload systemd and enable ghostpathd.service
 if [ -d /run/systemd/system ]; then
     systemctl --system daemon-reload >/dev/null || true

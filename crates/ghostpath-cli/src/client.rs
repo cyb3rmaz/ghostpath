@@ -46,15 +46,24 @@ impl DaemonClient {
         let stream = match UnixStream::connect(&self.socket_path).await {
             Ok(s) => s,
             Err(e) => {
-                bail!(
-                    "Cannot connect to GhostPath daemon at '{}': {}\n\
-                     Please ensure the daemon is running:\n  \
-                     sudo systemctl start ghostpathd\n\
-                     Or run in foreground:\n  \
-                     sudo ghostpathd",
-                    self.socket_path.display(),
-                    e
-                );
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    bail!(
+                        "Cannot connect to GhostPath daemon at '{}': Permission denied.\n\
+                         Please ensure your user is in the 'ghostpath', 'sudo', or 'wheel' group:\n  \
+                         sudo usermod -aG ghostpath $USER",
+                        self.socket_path.display()
+                    );
+                } else {
+                    bail!(
+                        "Cannot connect to GhostPath daemon at '{}': {}\n\
+                         Please ensure the daemon is running:\n  \
+                         sudo systemctl start ghostpathd\n\
+                         Or run in foreground:\n  \
+                         sudo ghostpathd",
+                        self.socket_path.display(),
+                        e
+                    );
+                }
             }
         };
 
