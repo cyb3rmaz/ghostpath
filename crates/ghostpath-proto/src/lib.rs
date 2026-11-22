@@ -1,5 +1,14 @@
+pub mod config_gen;
+pub mod outbound;
+pub mod parser;
+
 use async_trait::async_trait;
-use ghostpath_core::{Result, ServerNode};
+use ghostpath_core::models::ServerNode;
+use ghostpath_core::Result;
+
+pub use config_gen::singbox::{generate_singbox_config, SingBoxConfigOptions};
+pub use outbound::managed::ManagedCoreOutbound;
+pub use parser::parse_any_link;
 
 #[async_trait]
 pub trait Outbound: Send + Sync {
