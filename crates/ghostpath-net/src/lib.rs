@@ -6,5 +6,7 @@ pub const GHOST_INTERFACE_NAME: &str = "ghost0";
 pub const GHOST_NFT_TABLE: &str = "ghostpath";
 
 pub mod journal;
+pub mod manager;
 
 pub use journal::{JournalAction, UndoJournal};
+pub use manager::{RouteGuard, RouteManager};
