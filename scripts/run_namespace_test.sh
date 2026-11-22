@@ -7,9 +7,9 @@ export PATH="/home/cybermaz/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 
 cd /mnt/c/Users/cybermaz/Projects/ghost_path
 
-echo "=== Running integration test inside isolated network namespace ==="
+echo "=== Running integration tests inside isolated network namespace ==="
 unshare -n env \
     RUSTUP_HOME=/home/cybermaz/.rustup \
     CARGO_HOME=/home/cybermaz/.cargo \
     PATH="/home/cybermaz/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    cargo test -p ghostpath-net --test namespace_routing_test -- --nocapture
+    cargo test -p ghostpath-net --test namespace_routing_test --test dns_leak_test --test wireguard_coexistence_test -- --nocapture
