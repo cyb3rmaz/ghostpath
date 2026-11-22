@@ -1,8 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
+use ghostpath_daemon::engine::DaemonEngine;
+use ghostpath_daemon::ipc::IpcServer;
+use ghostpath_daemon::mock;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-mod mock;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -12,7 +16,11 @@ mod mock;
 struct DaemonCli {
     /// Path to config file override
     #[arg(short, long)]
-    config: Option<std::path::PathBuf>,
+    config: Option<PathBuf>,
+
+    /// Path to Unix domain socket (default: /run/ghostpath/ghostpathd.sock)
+    #[arg(short, long)]
+    socket: Option<PathBuf>,
 
     /// Run cleanup/recovery pass and exit
     #[arg(long)]
@@ -42,35 +50,87 @@ async fn main() -> Result<()> {
 
     let args = DaemonCli::parse();
 
-    tracing::info!("Starting GhostPath VPN daemon (ghostpathd)");
+    info!("Starting GhostPath VPN daemon (ghostpathd)");
 
     if args.mock {
-        tracing::info!(port = args.port, "Starting mock daemon for UI testing");
+        info!(port = args.port, "Starting mock daemon for UI testing");
         let server = mock::MockDaemonServer::new(args.port);
         server.run().await?;
         return Ok(());
     }
 
     if args.recover {
-        tracing::info!("Running recovery pass for stale state...");
+        info!("Running recovery pass for stale state...");
         if let Some(journal) = ghostpath_net::UndoJournal::load()? {
-            tracing::info!(
+            info!(
                 count = journal.actions.len(),
                 "Found undo journal actions to revert"
             );
             ghostpath_net::UndoJournal::remove_journal_file()?;
-            tracing::info!("Undo journal cleared");
+            info!("Undo journal cleared");
         } else {
-            tracing::info!("No stale undo journal found");
+            info!("No stale undo journal found");
         }
         return Ok(());
     }
 
-    if args.dry_run {
-        tracing::info!("Dry-run mode activated: skipping system mutation");
-        return Ok(());
+    let socket_path = args
+        .socket
+        .or_else(|| std::env::var("GHOSTPATH_SOCKET").ok().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("/run/ghostpath/ghostpathd.sock"));
+
+    let engine = Arc::new(DaemonEngine::new(args.dry_run));
+    let server = IpcServer::new(socket_path, engine.clone());
+
+    info!(
+        dry_run = args.dry_run,
+        "GhostPath daemon engine initialized successfully"
+    );
+
+    // Setup graceful shutdown handlers
+    let engine_shutdown = engine.clone();
+    tokio::select! {
+        res = server.run() => {
+            if let Err(e) = res {
+                tracing::error!("IPC server encountered error: {}", e);
+            }
+        }
+        _ = wait_for_shutdown() => {
+            info!("Shutdown signal received, disconnecting and restoring state...");
+            let _ = engine_shutdown.disconnect().await;
+            server.cleanup();
+            info!("GhostPath daemon shutdown complete");
+        }
     }
 
-    tracing::info!("GhostPath VPN daemon initialized successfully");
     Ok(())
+}
+
+async fn wait_for_shutdown() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
+        let mut sigint =
+            signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
+
+        tokio::select! {
+            _ = sigterm.recv() => {
+                info!("Received SIGTERM");
+            }
+            _ = sigint.recv() => {
+                info!("Received SIGINT");
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received Ctrl+C");
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+        info!("Received Ctrl+C");
+    }
 }

@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --workspace
+
+override_dh_auto_install:
+	install -d -m 0755 debian/ghostpath-vpn/usr/bin
+	install -m 0755 target/release/ghostpath debian/ghostpath-vpn/usr/bin/
+	install -m 0755 target/release/ghostpathd debian/ghostpath-vpn/usr/bin/
+	install -d -m 0755 debian/ghostpath-vpn/lib/systemd/system
+	install -m 0644 systemd/ghostpathd.service debian/ghostpath-vpn/lib/systemd/system/
+	install -d -m 0755 debian/ghostpath-vpn/usr/share/applications
+	install -m 0644 packaging/ghostpath.desktop debian/ghostpath-vpn/usr/share/applications/

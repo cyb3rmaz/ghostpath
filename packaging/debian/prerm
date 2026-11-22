@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl stop ghostpathd.service >/dev/null || true
+    systemctl disable ghostpathd.service >/dev/null || true
+fi
+
+# Run recovery pass to guarantee cleanup of routing rules, DNS, and TUN
+if [ -x /usr/bin/ghostpathd ]; then
+    /usr/bin/ghostpathd --recover >/dev/null 2>&1 || true
+fi
+
+#DEBHELPER#
+exit 0

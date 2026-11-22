@@ -1,8 +1,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use ghostpath_core::models::ConnectionStatus;
-use ghostpath_core::GhostConfig;
+use std::path::PathBuf;
+
+mod client;
+use client::DaemonClient;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -13,6 +15,10 @@ struct Cli {
     /// Format output as JSON for scripting
     #[arg(long, global = true)]
     json: bool,
+
+    /// Path to custom daemon Unix domain socket
+    #[arg(long, global = true)]
+    socket: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Commands,
@@ -50,130 +56,253 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config = GhostConfig::load().unwrap_or_default();
+    let socket_path = cli.socket.unwrap_or_else(DaemonClient::default_socket_path);
+    let client = DaemonClient::new(socket_path);
 
     match cli.command {
         Commands::Connect { node_id } => {
-            let target_node = node_id
-                .or(config.active_node_id.clone())
-                .unwrap_or_else(|| "default-node".to_string());
+            let params = serde_json::json!({
+                "nodeId": node_id,
+            });
 
-            if cli.json {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "connecting",
-                        "node": target_node,
-                    })
-                );
-            } else {
-                println!(
-                    "{} Connecting to node: {}",
-                    "->".bright_green().bold(),
-                    target_node.cyan()
-                );
+            if !cli.json {
+                println!("{} Connecting to VPN node...", "->".bright_green().bold());
+            }
+
+            match client.call("connect", params).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else {
+                        let node_name = res
+                            .get("nodeName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Connected");
+                        let iface = res
+                            .get("interface")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("ghost0");
+                        println!(
+                            "{} Tunnel established to {} via {}",
+                            "OK".bright_green().bold(),
+                            node_name.cyan(),
+                            iface.yellow()
+                        );
+                    }
+                }
+                Err(e) => {
+                    if cli.json {
+                        println!("{}", serde_json::json!({ "error": e.to_string() }));
+                    } else {
+                        eprintln!("{} Failed to connect: {}", "ERR".bright_red().bold(), e);
+                    }
+                    std::process::exit(1);
+                }
             }
         }
         Commands::Disconnect => {
-            if cli.json {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "disconnected"
-                    })
-                );
-            } else {
-                println!("{} Disconnected cleanly", "OK".bright_green().bold());
+            if !cli.json {
+                println!("{} Tearing down tunnel...", "->".bright_yellow().bold());
+            }
+
+            match client.call("disconnect", serde_json::json!({})).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else {
+                        println!(
+                            "{} Tunnel disconnected and routes cleanly restored",
+                            "OK".bright_green().bold()
+                        );
+                    }
+                }
+                Err(e) => {
+                    if cli.json {
+                        println!("{}", serde_json::json!({ "error": e.to_string() }));
+                    } else {
+                        eprintln!("{} Failed to disconnect: {}", "ERR".bright_red().bold(), e);
+                    }
+                    std::process::exit(1);
+                }
             }
         }
-        Commands::Status => {
-            if cli.json {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": ConnectionStatus::Disconnected,
-                        "interface": "ghost0",
-                        "mtu": config.settings.mtu,
-                        "core": config.settings.core_engine,
-                    })
-                );
-            } else {
-                println!("{}", "GhostPath VPN Status:".bold());
-                println!("  Status:    {}", "Disconnected".bright_yellow());
-                println!("  Interface: ghost0");
-                println!("  MTU:       {}", config.settings.mtu);
-                println!("  Core:      {:?}", config.settings.core_engine);
+        Commands::Status => match client.call("getStatus", serde_json::json!({})).await {
+            Ok(res) => {
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&res)?);
+                } else {
+                    let status_str = res
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let iface = res
+                        .get("interface")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("ghost0");
+                    let mtu = res.get("mtu").and_then(|v| v.as_u64()).unwrap_or(1420);
+
+                    println!("{}", "GhostPath VPN Status:".bold());
+                    let colored_status = match status_str {
+                        "connected" => status_str.bright_green().bold(),
+                        "connecting" => status_str.bright_yellow(),
+                        "disconnecting" => status_str.bright_yellow(),
+                        _ => status_str.bright_red(),
+                    };
+                    println!("  Status:    {}", colored_status);
+                    println!("  Interface: {}", iface);
+                    println!("  MTU:       {}", mtu);
+
+                    if let Some(node) = res.get("activeNode").filter(|v| !v.is_null()) {
+                        let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("-");
+                        let proto = node.get("protocol").and_then(|v| v.as_str()).unwrap_or("-");
+                        let host = node.get("host").and_then(|v| v.as_str()).unwrap_or("-");
+                        let port = node.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
+                        println!(
+                            "  Server:    {} ({}://{}:{})",
+                            name.cyan(),
+                            proto,
+                            host,
+                            port
+                        );
+                    }
+
+                    if let Some(traffic) = res.get("traffic") {
+                        let down_mbps = traffic
+                            .get("downloadMbps")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let up_mbps = traffic
+                            .get("uploadMbps")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let secs = traffic
+                            .get("sessionSeconds")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        println!(
+                            "  Speed:     ↓ {:.1} Mbps  ↑ {:.1} Mbps",
+                            down_mbps, up_mbps
+                        );
+                        println!("  Uptime:    {}s", secs);
+                    }
+                }
             }
-        }
+            Err(e) => {
+                if cli.json {
+                    println!("{}", serde_json::json!({ "error": e.to_string() }));
+                } else {
+                    eprintln!("{} Failed to get status: {}", "ERR".bright_red().bold(), e);
+                }
+                std::process::exit(1);
+            }
+        },
         Commands::Import { target, name } => {
-            if cli.json {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "imported": target,
-                        "name": name,
-                        "success": true
-                    })
-                );
-            } else {
-                println!(
-                    "{} Imported profile successfully: {}",
-                    "OK".bright_green().bold(),
-                    target.cyan()
-                );
+            let params = serde_json::json!({
+                "raw": target,
+                "name": name,
+            });
+
+            match client.call("importProfile", params).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else {
+                        let node_name = res
+                            .get("node")
+                            .and_then(|n| n.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&target);
+                        println!(
+                            "{} Imported profile successfully: {}",
+                            "OK".bright_green().bold(),
+                            node_name.cyan()
+                        );
+                    }
+                }
+                Err(e) => {
+                    if cli.json {
+                        println!("{}", serde_json::json!({ "error": e.to_string() }));
+                    } else {
+                        eprintln!(
+                            "{} Failed to import profile: {}",
+                            "ERR".bright_red().bold(),
+                            e
+                        );
+                    }
+                    std::process::exit(1);
+                }
             }
         }
-        Commands::Doctor => {
-            run_doctor(cli.json).await?;
-        }
+        Commands::Doctor => match client.call("runDoctor", serde_json::json!({})).await {
+            Ok(res) => {
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&res)?);
+                } else {
+                    println!("{}", "GhostPath System Diagnostics:".bold());
+                    if let Some(checks) = res.get("checks").and_then(|v| v.as_array()) {
+                        for check in checks {
+                            let name = check.get("name").and_then(|v| v.as_str()).unwrap_or("-");
+                            let passed = check
+                                .get("passed")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if passed {
+                                println!("  {} {}", "[PASS]".bright_green().bold(), name);
+                            } else {
+                                println!("  {} {}", "[WARN]".bright_yellow().bold(), name);
+                                if let Some(fix) = check.get("fix").and_then(|v| v.as_str()) {
+                                    println!("         Fix: {}", fix.dimmed());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                if cli.json {
+                    println!("{}", serde_json::json!({ "error": e.to_string() }));
+                } else {
+                    eprintln!("{} Failed to run doctor: {}", "ERR".bright_red().bold(), e);
+                }
+                std::process::exit(1);
+            }
+        },
         Commands::Logs { lines } => {
-            if cli.json {
-                println!("[]");
-            } else {
-                println!("Displaying last {} lines of logs (empty)", lines);
+            let params = serde_json::json!({
+                "limit": lines,
+            });
+
+            match client.call("getLogs", params).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else if let Some(logs) = res.as_array() {
+                        if logs.is_empty() {
+                            println!("(No log entries recorded)");
+                        } else {
+                            for log in logs {
+                                if let Some(line) = log.as_str() {
+                                    println!("{}", line);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    if cli.json {
+                        println!("{}", serde_json::json!({ "error": e.to_string() }));
+                    } else {
+                        eprintln!(
+                            "{} Failed to retrieve logs: {}",
+                            "ERR".bright_red().bold(),
+                            e
+                        );
+                    }
+                    std::process::exit(1);
+                }
             }
         }
     }
 
     Ok(())
-}
-
-async fn run_doctor(json: bool) -> Result<()> {
-    let tun_accessible = std::path::Path::new("/dev/net/tun").exists();
-    let is_root = {
-        #[cfg(unix)]
-        {
-            nix::unistd::Uid::current().is_root()
-        }
-        #[cfg(not(unix))]
-        {
-            false
-        }
-    };
-
-    if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "checks": [
-                    { "name": "Kernel TUN support", "passed": tun_accessible },
-                    { "name": "Privilege check", "passed": is_root },
-                ]
-            })
-        );
-    } else {
-        println!("{}", "Running GhostPath System Doctor...".bold());
-        print_check("Kernel TUN device (/dev/net/tun)", tun_accessible);
-        print_check("Privileges (root / capabilities)", is_root);
-    }
-
-    Ok(())
-}
-
-fn print_check(name: &str, passed: bool) {
-    if passed {
-        println!("  {} {}", "[PASS]".bright_green().bold(), name);
-    } else {
-        println!("  {} {}", "[WARN]".bright_yellow().bold(), name);
-    }
 }

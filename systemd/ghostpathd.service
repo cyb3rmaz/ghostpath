@@ -1,0 +1,44 @@
+[Unit]
+Description=GhostPath VPN Privileged Tunnel Daemon
+Documentation=https://github.com/cybermaz/ghost_path
+After=network.target network-online.target systemd-resolved.service NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ghostpathd
+ExecStopPost=/usr/bin/ghostpathd --recover
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=10s
+KillMode=mixed
+
+# Privilege separation & capabilities
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+# Sandboxing & isolation
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+MemoryDenyWriteExecute=false
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+# Directories automatically provisioned with secure permissions
+RuntimeDirectory=ghostpath
+RuntimeDirectoryMode=0755
+StateDirectory=ghostpath
+StateDirectoryMode=0700
+ConfigurationDirectory=ghostpath
+ConfigurationDirectoryMode=0755
+
+# Resource limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

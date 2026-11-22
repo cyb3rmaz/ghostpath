@@ -1,0 +1,38 @@
+# Maintainer: GhostPath Team <dev@ghostpath.vpn>
+pkgname=ghostpath-vpn
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="GhostPath VPN - Linux VPN client with reliable TUN mode"
+arch=('x86_64' 'aarch64')
+url="https://github.com/cybermaz/ghost_path"
+license=('MIT' 'Apache-2.0')
+depends=('iproute2' 'iptables' 'systemd')
+makedepends=('cargo' 'rust>=1.75' 'pkgconf' 'openssl')
+backup=('etc/ghostpath/config.toml')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "$pkgname-$pkgver"
+    cargo fetch --locked --target "$CARCH-unknown-linux-gnu"
+}
+
+build() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --workspace
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    cargo test --frozen --workspace
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm755 target/release/ghostpath "$pkgdir/usr/bin/ghostpath"
+    install -Dm755 target/release/ghostpathd "$pkgdir/usr/bin/ghostpathd"
+    install -Dm644 systemd/ghostpathd.service "$pkgdir/usr/lib/systemd/system/ghostpathd.service"
+    install -Dm644 packaging/ghostpath.desktop "$pkgdir/usr/share/applications/ghostpath.desktop"
+}

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=GhostPath VPN
+GenericName=VPN Client
+Comment=Censorship-resistant Linux VPN client with reliable TUN mode
+Exec=ghostpath-gui %u
+Icon=ghostpath
+Terminal=false
+Type=Application
+Categories=Network;Security;VPN;
+StartupWMClass=ghostpath-gui
+Keywords=vpn;proxy;v2ray;vless;shadowsocks;tunnel;censorship;iran;
+MimeType=x-scheme-handler/vless;x-scheme-handler/vmess;x-scheme-handler/trojan;x-scheme-handler/ss;

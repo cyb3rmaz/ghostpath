@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+# Create ghostpath system group if it does not exist
+if ! getent group ghostpath >/dev/null; then
+    groupadd --system ghostpath
+fi
+
+# Reload systemd and enable ghostpathd.service
+if [ -d /run/systemd/system ]; then
+    systemctl --system daemon-reload >/dev/null || true
+    systemctl enable ghostpathd.service >/dev/null || true
+    systemctl start ghostpathd.service >/dev/null || true
+fi
+
+#DEBHELPER#
+exit 0

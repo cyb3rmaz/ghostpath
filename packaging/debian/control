@@ -1,0 +1,16 @@
+Source: ghostpath-vpn
+Section: net
+Priority: optional
+Maintainer: GhostPath Team <dev@ghostpath.vpn>
+Build-Depends: debhelper-compat (= 13), cargo, rustc (>= 1.75), libssl-dev, pkg-config
+Standards-Version: 4.6.2
+Homepage: https://github.com/cybermaz/ghost_path
+
+Package: ghostpath-vpn
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, iproute2, iptables | nftables, systemd
+Recommends: systemd-resolved
+Description: GhostPath VPN - Native Linux VPN client with reliable TUN mode
+ GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode
+ on Linux, supporting VLESS/Reality, VMess, Trojan, and Shadowsocks protocols
+ without routing loops, DNS leaks, or conflicts with other VPN clients.
