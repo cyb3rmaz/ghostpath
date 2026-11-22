@@ -1,0 +1,6 @@
+{
+  "name": "Kestrel VPN",
+  "description": "A modern Linux VPN and proxy client interface with multi-protocol node management, split tunneling, and live traffic diagnostics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
