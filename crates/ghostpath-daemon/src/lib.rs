@@ -1,7 +1,6 @@
 pub mod doctor;
 pub mod engine;
 pub mod ipc;
-pub mod mock;
 
 pub use doctor::{DoctorCheck, DoctorReport, SystemDoctor};
 pub use engine::DaemonEngine;

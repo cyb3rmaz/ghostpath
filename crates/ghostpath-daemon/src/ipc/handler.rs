@@ -56,6 +56,106 @@ pub async fn handle_rpc_request(engine: Arc<DaemonEngine>, req: JsonRpcRequest) 
             Ok(res) => JsonRpcResponse::success(id, res),
             Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),
         },
+        "pingNode" => {
+            let node_id = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("nodeId"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match engine.ping_node(node_id).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+            }
+        }
+        "pingAll" => match engine.ping_all().await {
+            Ok(res) => JsonRpcResponse::success(id, res),
+            Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+        },
+        "listSubscriptions" => match engine.list_subscriptions().await {
+            Ok(res) => JsonRpcResponse::success(id, res),
+            Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),
+        },
+        "importSubscription" => {
+            let url = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("url"))
+                .and_then(|v| v.as_str());
+            let name = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            match url {
+                Some(u) => match engine.import_subscription(u, name).await {
+                    Ok(res) => JsonRpcResponse::success(id, res),
+                    Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+                },
+                None => JsonRpcResponse::error(id, ERR_INVALID_PARAMS, "Missing 'url' parameter"),
+            }
+        }
+        "deleteSubscription" => {
+            let sub_id = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match engine.delete_subscription(sub_id).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+            }
+        }
+        "refreshSubscription" => {
+            let sub_id = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match engine.refresh_subscription(sub_id).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+            }
+        }
+        "listRules" => match engine.list_rules().await {
+            Ok(res) => JsonRpcResponse::success(id, res),
+            Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),
+        },
+        "addRule" => {
+            let rule = req.params.unwrap_or(serde_json::Value::Null);
+            match engine.add_rule(rule).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_INVALID_PARAMS, e.to_string()),
+            }
+        }
+        "deleteRule" => {
+            let rule_id = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match engine.delete_rule(rule_id).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+            }
+        }
+        "toggleRule" => {
+            let rule_id = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match engine.toggle_rule(rule_id).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+            }
+        }
         "getSettings" => match engine.get_settings().await {
             Ok(res) => JsonRpcResponse::success(id, res),
             Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),

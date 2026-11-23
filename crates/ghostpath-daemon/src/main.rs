@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 use ghostpath_daemon::engine::DaemonEngine;
 use ghostpath_daemon::ipc::IpcServer;
-use ghostpath_daemon::mock;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
@@ -29,14 +28,6 @@ struct DaemonCli {
     /// Dry run mode: print actions without applying network changes
     #[arg(long)]
     dry_run: bool,
-
-    /// Run as a mock JSON-RPC backend for frontend UI testing
-    #[arg(long)]
-    mock: bool,
-
-    /// Port for mock JSON-RPC server (default: 3001)
-    #[arg(long, default_value = "3001")]
-    port: u16,
 }
 
 #[tokio::main]
@@ -51,13 +42,6 @@ async fn main() -> Result<()> {
     let args = DaemonCli::parse();
 
     info!("Starting GhostPath VPN daemon (ghostpathd)");
-
-    if args.mock {
-        info!(port = args.port, "Starting mock daemon for UI testing");
-        let server = mock::MockDaemonServer::new(args.port);
-        server.run().await?;
-        return Ok(());
-    }
 
     if args.recover {
         info!("Running recovery pass for stale state...");
