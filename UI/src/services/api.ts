@@ -260,4 +260,8 @@ export const GhostApi = {
   onDeepLinkImported(callback: (link: string) => void) {
     return subscribeTauriEvent('deep_link_imported', callback);
   },
+
+  onTrayToggleConnect(callback: () => void) {
+    return subscribeTauriEvent('tray_toggle_connect', callback);
+  },
 };

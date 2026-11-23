@@ -225,10 +225,15 @@ export default function App() {
       setShowAddModal(true);
     });
 
+    const unlistenTray = GhostApi.onTrayToggleConnect?.(() => {
+      handleToggleConnect();
+    }) || (() => {});
+
     return () => {
       unlistenTraffic();
       unlistenState();
       unlistenDeepLink();
+      unlistenTray();
     };
   }, []);
 
