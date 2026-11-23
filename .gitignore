@@ -11,3 +11,4 @@ undo_journal.json
 *.rpm
 *.AppImage
 
+/.superpowers

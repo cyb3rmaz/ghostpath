@@ -1,3 +1,5 @@
+pub mod ipc;
+
 pub const UI_ASSETS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../UI/dist");
 
 pub fn get_ui_dist_path() -> std::path::PathBuf {

@@ -3,10 +3,14 @@ name = "ghostpath-gui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Desktop UI bridge and packaging for GhostPath VPN"
+description = "Native desktop app and GUI bridge for GhostPath VPN"
 
 [lints]
 workspace = true
+
+[lib]
+name = "ghostpath_gui"
+path = "src/lib.rs"
 
 [[bin]]
 name = "ghostpath-gui"
@@ -14,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 ghostpath-core = { workspace = true }
+ghostpath-proto = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -21,3 +26,10 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tauri = { version = "2", default-features = false, features = ["wry", "tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-deep-link = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", default-features = false }
