@@ -160,7 +160,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [status]);
 
-  // Synchronize state with real daemon backend on mount
+  // Synchronize state with real daemon backend on mount and subscribe to streaming events
   useEffect(() => {
     GhostApi.getStatus()
       .then((res) => {
@@ -180,6 +180,48 @@ export default function App() {
         }
       })
       .catch(() => {});
+
+    GhostApi.getSettings()
+      .then((s) => {
+        if (s) setSettings(s);
+      })
+      .catch(() => {});
+
+    // Listen to real-time events from daemon
+    const unlistenTraffic = GhostApi.onTrafficUpdated((traffic) => {
+      if (typeof traffic.downloadMbps === 'number') {
+        setDownloadMbps(traffic.downloadMbps);
+        setUploadMbps(traffic.uploadMbps);
+        setTotalDownMb(traffic.totalDownMb);
+        setTotalUpMb(traffic.totalUpMb);
+        setSessionSeconds(traffic.sessionSeconds);
+        setTrafficHistory((prev) => [
+          ...prev.slice(1),
+          {
+            time: String(new Date().getSeconds()).padStart(2, '0'),
+            downloadMbps: traffic.downloadMbps,
+            uploadMbps: traffic.uploadMbps,
+          },
+        ]);
+      }
+    });
+
+    const unlistenState = GhostApi.onStateChanged((stateData) => {
+      if (stateData.status) {
+        setStatus(stateData.status);
+      }
+    });
+
+    const unlistenDeepLink = GhostApi.onDeepLinkImported((link) => {
+      showToast(`Received link: ${link.substring(0, 30)}...`);
+      setShowAddModal(true);
+    });
+
+    return () => {
+      unlistenTraffic();
+      unlistenState();
+      unlistenDeepLink();
+    };
   }, []);
 
   const handleToggleConnect = async () => {
@@ -222,21 +264,11 @@ export default function App() {
           }`
         );
         showToast(`Connected to ${activeNode.name}`);
-      } catch (e) {
-        setTimeout(() => {
-          setStatus('connected');
-          setSessionSeconds(0);
-          appendLog(
-            'info',
-            'core/tun',
-            `Handshake verified (${activeNode.latencyMs ?? 32}ms) — ${
-              interfaceMode === 'tun'
-                ? `ghost0 bound to 10.8.0.2 (mtu=${settings.mtu})`
-                : `SOCKS5 listening on 127.0.0.1:${settings.socksPort}`
-            }`
-          );
-          showToast(`Connected to ${activeNode.name}`);
-        }, 480);
+      } catch (e: any) {
+        setStatus('failed');
+        const errMsg = e?.message || 'Connection failed';
+        appendLog('error', 'core/ipc', `Connection failed: ${errMsg}`);
+        showToast(`Connection failed: ${errMsg}`);
       }
     }
   };
@@ -413,6 +445,9 @@ export default function App() {
 
   const handleUpdateSettings = (patch: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
+    GhostApi.updateSettings(patch).catch((err) => {
+      console.warn('Failed to persist settings via RPC:', err);
+    });
     if (patch.coreEngine) {
       appendLog('info', 'core/engine', `Active runtime switched to ${patch.coreEngine}`);
       showToast(`Core engine set to ${patch.coreEngine}`);

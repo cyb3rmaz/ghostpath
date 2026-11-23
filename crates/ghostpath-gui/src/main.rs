@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use ghostpath_gui::ipc::commands::{handle_rpc_invoke, AppState};
+use ghostpath_gui::ipc::events::spawn_event_loop;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -12,7 +13,7 @@ async fn rpc_request(
     method: String,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    handle_rpc_invoke(&state.mock_daemon, &method, params).await
+    handle_rpc_invoke(&state, &method, params).await
 }
 
 fn main() -> Result<()> {
@@ -26,9 +27,14 @@ fn main() -> Result<()> {
     info!("Starting GhostPath VPN native desktop client");
 
     let app_state = Arc::new(AppState::default());
+    let state_for_setup = app_state.clone();
 
     tauri::Builder::default()
         .manage(app_state)
+        .setup(move |app| {
+            spawn_event_loop(app.handle().clone(), state_for_setup.ipc_client.clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![rpc_request])
         .run(tauri::generate_context!())
         .map_err(|e| anyhow::anyhow!("Error running Tauri application: {}", e))?;

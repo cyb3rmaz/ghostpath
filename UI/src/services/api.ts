@@ -1,4 +1,5 @@
 import { ServerNode, AppSettings, ConnectionStatus, DiagnosticLog } from '../types/vpn';
+import { INITIAL_NODES, INITIAL_SETTINGS, INITIAL_LOGS } from '../data/vpnData';
 
 export interface RpcResponse<T = any> {
   jsonrpc: string;
@@ -11,52 +12,144 @@ export interface RpcResponse<T = any> {
   };
 }
 
-let requestId = 1;
-
+/**
+ * Pure offline desktop JSON-RPC dispatcher using Tauri IPC invoke.
+ * Eliminates all network fetch/HTTP calls to 127.0.0.1.
+ */
 export async function callRpc<T = any>(method: string, params: Record<string, any> = {}): Promise<T> {
-  const payload = {
-    jsonrpc: '2.0',
-    id: requestId++,
-    method,
-    params,
-  };
-
-  // 1. Check if running inside Tauri
+  // 1. Native Desktop IPC invoke
   if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-    try {
-      const invoke = (window as any).__TAURI__.core?.invoke || (window as any).__TAURI__.invoke;
-      const res = await invoke('rpc_request', { method, params });
-      return res as T;
-    } catch (e) {
-      console.warn('Tauri RPC failed, falling back to HTTP:', e);
+    const tauri = (window as any).__TAURI__;
+    const invoke = tauri.core?.invoke || tauri.invoke;
+    if (typeof invoke === 'function') {
+      try {
+        const res = await invoke('rpc_request', { method, params });
+        return res as T;
+      } catch (e: any) {
+        const msg = typeof e === 'string' ? e : e?.message || `RPC invocation failed for ${method}`;
+        throw new Error(msg);
+      }
     }
   }
 
-  // 2. HTTP JSON-RPC bridge (default: http://127.0.0.1:3001/rpc)
-  try {
-    const res = await fetch('http://127.0.0.1:3001/rpc', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+  // 2. Headless/Browser offline fallback emulator (no network socket)
+  return emulateOfflineFallback<T>(method, params);
+}
 
-    if (!res.ok) {
-      throw new Error(`HTTP error ${res.status}: ${res.statusText}`);
+/**
+ * Subscribe to Tauri push events (state_changed, traffic_updated, log_appended, deep_link).
+ */
+export function subscribeTauriEvent<T = any>(event: string, handler: (payload: T) => void): () => void {
+  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+    const tauri = (window as any).__TAURI__;
+    const listen = tauri.event?.listen;
+    if (typeof listen === 'function') {
+      let unlistenFn: (() => void) | null = null;
+      listen(event, (e: any) => handler(e.payload)).then((unlisten: any) => {
+        unlistenFn = unlisten;
+      });
+      return () => {
+        if (unlistenFn) unlistenFn();
+      };
     }
-
-    const data: RpcResponse<T> = await res.json();
-    if (data.error) {
-      throw new Error(`Daemon error [${data.error.code}]: ${data.error.message}`);
-    }
-
-    return data.result as T;
-  } catch (err) {
-    // If daemon is not running on 3001, log and throw
-    console.debug(`Backend RPC [${method}] unavailable:`, err);
-    throw err;
   }
+  return () => {};
+}
+
+// In-memory fallback for local browser design mode
+let fallbackStatus: ConnectionStatus = 'disconnected';
+let fallbackActiveNodeId: string = INITIAL_NODES[0]?.id || 'node-1';
+let fallbackSettings: AppSettings = { ...INITIAL_SETTINGS };
+let fallbackNodes: ServerNode[] = [...INITIAL_NODES];
+
+function emulateOfflineFallback<T = any>(method: string, params: Record<string, any>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    switch (method) {
+      case 'getStatus':
+        resolve({
+          status: fallbackStatus,
+          activeNode: fallbackNodes.find((n) => n.id === fallbackActiveNodeId) || null,
+          routingMode: 'rule',
+          interfaceMode: 'tun',
+          traffic: {
+            downloadMbps: fallbackStatus === 'connected' ? 24.5 : 0.0,
+            uploadMbps: fallbackStatus === 'connected' ? 5.2 : 0.0,
+            totalDownMb: fallbackStatus === 'connected' ? 142.0 : 0.0,
+            totalUpMb: fallbackStatus === 'connected' ? 32.5 : 0.0,
+            sessionSeconds: fallbackStatus === 'connected' ? 120 : 0,
+          },
+          interface: 'ghost0',
+          mtu: fallbackSettings.mtu || 1420,
+          core: fallbackSettings.coreEngine || 'sing-box',
+        } as unknown as T);
+        break;
+
+      case 'connect':
+        fallbackStatus = 'connected';
+        if (params.nodeId) fallbackActiveNodeId = params.nodeId;
+        resolve({
+          status: 'connected',
+          nodeId: fallbackActiveNodeId,
+          interface: 'ghost0',
+        } as unknown as T);
+        break;
+
+      case 'disconnect':
+        fallbackStatus = 'disconnected';
+        resolve({ status: 'disconnected' } as unknown as T);
+        break;
+
+      case 'listNodes':
+        resolve(fallbackNodes as unknown as T);
+        break;
+
+      case 'importProfile': {
+        const raw = params.raw || '';
+        const name = params.name || 'Imported Server';
+        const newNode: ServerNode = {
+          id: `node-${fallbackNodes.length + 1}`,
+          name,
+          protocol: raw.startsWith('vless://') ? 'VLESS' : 'VMess',
+          host: '127.0.0.1',
+          port: 443,
+          latencyMs: 38,
+          region: 'CUSTOM',
+        };
+        fallbackNodes.push(newNode);
+        resolve({ type: 'single_node', node: newNode } as unknown as T);
+        break;
+      }
+
+      case 'getSettings':
+        resolve(fallbackSettings as unknown as T);
+        break;
+
+      case 'updateSettings':
+        fallbackSettings = { ...fallbackSettings, ...params };
+        resolve(fallbackSettings as unknown as T);
+        break;
+
+      case 'getLogs':
+        resolve(INITIAL_LOGS.slice(0, params.limit || 50) as unknown as T);
+        break;
+
+      case 'runDoctor':
+        resolve({
+          checks: [
+            { id: 'tun', name: 'Kernel TUN Device (ghost0)', passed: true, fix: null },
+            { id: 'privs', name: 'Daemon Capabilities', passed: true, fix: null },
+            { id: 'dns', name: 'systemd-resolved D-Bus', passed: true, fix: null },
+            { id: 'rp_filter', name: 'Reverse Path Filtering', passed: true, fix: null },
+            { id: 'docker', name: 'Docker Bridge Isolation', passed: true, fix: null },
+          ],
+          overall_healthy: true,
+        } as unknown as T);
+        break;
+
+      default:
+        reject(new Error(`Method '${method}' not found`));
+    }
+  });
 }
 
 export const GhostApi = {
@@ -109,7 +202,7 @@ export const GhostApi = {
   },
 
   async getLogs(limit: number = 50) {
-    return callRpc<string[]>('getLogs', { limit });
+    return callRpc<DiagnosticLog[]>('getLogs', { limit });
   },
 
   async runDoctor() {
@@ -124,5 +217,22 @@ export const GhostApi = {
       }>;
       overall_healthy?: boolean;
     }>('runDoctor', {});
+  },
+
+  // Events
+  onStateChanged(callback: (status: any) => void) {
+    return subscribeTauriEvent('state_changed', callback);
+  },
+
+  onTrafficUpdated(callback: (traffic: { downloadMbps: number; uploadMbps: number; totalDownMb: number; totalUpMb: number; sessionSeconds: number }) => void) {
+    return subscribeTauriEvent('traffic_updated', callback);
+  },
+
+  onLogAppended(callback: (log: DiagnosticLog) => void) {
+    return subscribeTauriEvent('log_appended', callback);
+  },
+
+  onDeepLinkImported(callback: (link: string) => void) {
+    return subscribeTauriEvent('deep_link_imported', callback);
   },
 };
