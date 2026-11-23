@@ -1,3 +1,5 @@
+#![cfg(any(test, feature = "dev-mock"))]
+
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
