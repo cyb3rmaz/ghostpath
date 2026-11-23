@@ -1,5 +1,4 @@
-import { ServerNode, AppSettings, ConnectionStatus, DiagnosticLog } from '../types/vpn';
-import { INITIAL_NODES, INITIAL_SETTINGS, INITIAL_LOGS } from '../data/vpnData';
+import { ServerNode, AppSettings, ConnectionStatus, DiagnosticLog, Subscription, RoutingRule } from '../types/vpn';
 
 export interface RpcResponse<T = any> {
   jsonrpc: string;
@@ -13,12 +12,18 @@ export interface RpcResponse<T = any> {
 }
 
 /**
+ * Check if running inside the Tauri native desktop shell.
+ */
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && Boolean((window as any).__TAURI__);
+}
+
+/**
  * Pure offline desktop JSON-RPC dispatcher using Tauri IPC invoke.
  * Eliminates all network fetch/HTTP calls to 127.0.0.1.
  */
 export async function callRpc<T = any>(method: string, params: Record<string, any> = {}): Promise<T> {
-  // 1. Native Desktop IPC invoke
-  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+  if (isTauri()) {
     const tauri = (window as any).__TAURI__;
     const invoke = tauri.core?.invoke || tauri.invoke;
     if (typeof invoke === 'function') {
@@ -32,15 +37,14 @@ export async function callRpc<T = any>(method: string, params: Record<string, an
     }
   }
 
-  // 2. Headless/Browser offline fallback emulator (no network socket)
-  return emulateOfflineFallback<T>(method, params);
+  throw new Error(`GhostPath desktop IPC is unavailable. Please run inside the native GhostPath application.`);
 }
 
 /**
  * Subscribe to Tauri push events (state_changed, traffic_updated, log_appended, deep_link).
  */
 export function subscribeTauriEvent<T = any>(event: string, handler: (payload: T) => void): () => void {
-  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+  if (isTauri()) {
     const tauri = (window as any).__TAURI__;
     const listen = tauri.event?.listen;
     if (typeof listen === 'function') {
@@ -54,102 +58,6 @@ export function subscribeTauriEvent<T = any>(event: string, handler: (payload: T
     }
   }
   return () => {};
-}
-
-// In-memory fallback for local browser design mode
-let fallbackStatus: ConnectionStatus = 'disconnected';
-let fallbackActiveNodeId: string = INITIAL_NODES[0]?.id || 'node-1';
-let fallbackSettings: AppSettings = { ...INITIAL_SETTINGS };
-let fallbackNodes: ServerNode[] = [...INITIAL_NODES];
-
-function emulateOfflineFallback<T = any>(method: string, params: Record<string, any>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    switch (method) {
-      case 'getStatus':
-        resolve({
-          status: fallbackStatus,
-          activeNode: fallbackNodes.find((n) => n.id === fallbackActiveNodeId) || null,
-          routingMode: 'rule',
-          interfaceMode: 'tun',
-          traffic: {
-            downloadMbps: fallbackStatus === 'connected' ? 24.5 : 0.0,
-            uploadMbps: fallbackStatus === 'connected' ? 5.2 : 0.0,
-            totalDownMb: fallbackStatus === 'connected' ? 142.0 : 0.0,
-            totalUpMb: fallbackStatus === 'connected' ? 32.5 : 0.0,
-            sessionSeconds: fallbackStatus === 'connected' ? 120 : 0,
-          },
-          interface: 'ghost0',
-          mtu: fallbackSettings.mtu || 1420,
-          core: fallbackSettings.coreEngine || 'sing-box',
-        } as unknown as T);
-        break;
-
-      case 'connect':
-        fallbackStatus = 'connected';
-        if (params.nodeId) fallbackActiveNodeId = params.nodeId;
-        resolve({
-          status: 'connected',
-          nodeId: fallbackActiveNodeId,
-          interface: 'ghost0',
-        } as unknown as T);
-        break;
-
-      case 'disconnect':
-        fallbackStatus = 'disconnected';
-        resolve({ status: 'disconnected' } as unknown as T);
-        break;
-
-      case 'listNodes':
-        resolve(fallbackNodes as unknown as T);
-        break;
-
-      case 'importProfile': {
-        const raw = params.raw || '';
-        const name = params.name || 'Imported Server';
-        const newNode: ServerNode = {
-          id: `node-${fallbackNodes.length + 1}`,
-          name,
-          protocol: raw.startsWith('vless://') ? 'VLESS' : 'VMess',
-          host: '127.0.0.1',
-          port: 443,
-          latencyMs: 38,
-          region: 'CUSTOM',
-        };
-        fallbackNodes.push(newNode);
-        resolve({ type: 'single_node', node: newNode } as unknown as T);
-        break;
-      }
-
-      case 'getSettings':
-        resolve(fallbackSettings as unknown as T);
-        break;
-
-      case 'updateSettings':
-        fallbackSettings = { ...fallbackSettings, ...params };
-        resolve(fallbackSettings as unknown as T);
-        break;
-
-      case 'getLogs':
-        resolve(INITIAL_LOGS.slice(0, params.limit || 50) as unknown as T);
-        break;
-
-      case 'runDoctor':
-        resolve({
-          checks: [
-            { id: 'tun', name: 'Kernel TUN Device (ghost0)', passed: true, fix: null },
-            { id: 'privs', name: 'Daemon Capabilities', passed: true, fix: null },
-            { id: 'dns', name: 'systemd-resolved D-Bus', passed: true, fix: null },
-            { id: 'rp_filter', name: 'Reverse Path Filtering', passed: true, fix: null },
-            { id: 'docker', name: 'Docker Bridge Isolation', passed: true, fix: null },
-          ],
-          overall_healthy: true,
-        } as unknown as T);
-        break;
-
-      default:
-        reject(new Error(`Method '${method}' not found`));
-    }
-  });
 }
 
 export const GhostApi = {
@@ -193,6 +101,50 @@ export const GhostApi = {
     });
   },
 
+  async deleteNode(id: string) {
+    return callRpc<{ deleted: string }>('deleteNode', { id });
+  },
+
+  async pingNode(nodeId: string) {
+    return callRpc<{ nodeId: string; latencyMs: number | null }>('pingNode', { nodeId });
+  },
+
+  async pingAll() {
+    return callRpc<{ results: Array<{ nodeId: string; latencyMs: number | null }> }>('pingAll', {});
+  },
+
+  async listSubscriptions() {
+    return callRpc<Subscription[]>('listSubscriptions', {});
+  },
+
+  async importSubscription(url: string, name?: string) {
+    return callRpc<Subscription>('importSubscription', { url, name });
+  },
+
+  async deleteSubscription(id: string) {
+    return callRpc<{ deleted: string }>('deleteSubscription', { id });
+  },
+
+  async refreshSubscription(id: string) {
+    return callRpc<Subscription>('refreshSubscription', { id });
+  },
+
+  async listRules() {
+    return callRpc<RoutingRule[]>('listRules', {});
+  },
+
+  async addRule(rule: Partial<RoutingRule>) {
+    return callRpc<RoutingRule>('addRule', rule);
+  },
+
+  async deleteRule(id: string) {
+    return callRpc<{ deleted: string }>('deleteRule', { id });
+  },
+
+  async toggleRule(id: string) {
+    return callRpc<{ id: string; enabled: boolean }>('toggleRule', { id });
+  },
+
   async getSettings() {
     return callRpc<AppSettings>('getSettings', {});
   },
@@ -225,7 +177,7 @@ export const GhostApi = {
     fix_command?: string | null;
     details?: string | null;
   }> {
-    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+    if (isTauri()) {
       const tauri = (window as any).__TAURI__;
       const invoke = tauri.core?.invoke || tauri.invoke;
       if (typeof invoke === 'function') {
@@ -237,10 +189,10 @@ export const GhostApi = {
       }
     }
     return {
-      state: 'running',
-      message: 'GhostPath daemon is running',
-      fix_command: null,
-      details: null,
+      state: 'not_running',
+      message: 'GhostPath desktop IPC is unavailable. Please run inside the native GhostPath desktop app.',
+      fix_command: 'ghostpath-gui',
+      details: 'Native IPC requires the Tauri desktop environment',
     };
   },
 

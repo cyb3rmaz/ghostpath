@@ -10,7 +10,7 @@ interface DiagnosticsViewProps {
   onClearLogs: () => void;
   onCopyLogs: () => void;
   status: ConnectionStatus;
-  activeNode: ServerNode;
+  activeNode?: ServerNode | null;
   dnsPrimary: string;
 }
 
@@ -85,7 +85,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
           <div>
             <div className="text-[#78887F]">Public Egress IP</div>
             <div className="font-mono tabular-nums text-[#ECF2EE] mt-1">
-              {isConnected ? activeNode.host : '84.17.52.109 (ISP)'}
+              {isConnected && activeNode ? activeNode.host : 'Not Connected'}
             </div>
           </div>
           <div>

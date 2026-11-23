@@ -28,7 +28,7 @@ import { ThroughputChart } from './ThroughputChart';
 interface TunnelViewProps {
   status: ConnectionStatus;
   onToggleConnect: () => void;
-  activeNode: ServerNode;
+  activeNode: ServerNode | null | undefined;
   nodes: ServerNode[];
   subscriptions: Subscription[];
   onSelectNode: (nodeId: string) => void;
@@ -156,10 +156,12 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                 </span>
               </div>
               <h2 className="text-xl font-semibold text-[#ECF2EE] mt-2 tracking-tight">
-                {activeNode.name}
+                {activeNode ? activeNode.name : 'No Server Profile Selected'}
               </h2>
               <p className="text-xs text-[#8A9990] mt-1 font-mono tabular-nums">
-                {activeNode.protocol} · {activeNode.security} · {activeNode.host}:{activeNode.port}
+                {activeNode
+                  ? `${activeNode.protocol} · ${activeNode.security} · ${activeNode.host}:${activeNode.port}`
+                  : 'Import a subscription or server URI to connect'}
               </p>
             </div>
 
@@ -176,7 +178,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             <button
               type="button"
               onClick={onToggleConnect}
-              disabled={isConnecting}
+              disabled={isConnecting || !activeNode}
               aria-label={isConnected ? 'Disconnect VPN tunnel' : 'Connect VPN tunnel'}
               className={`group relative w-32 h-32 rounded-full flex flex-col items-center justify-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#101512] ${
                 isConnected
@@ -307,17 +309,17 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             <div>
               <div className="text-[#78887F]">Exit IPv4</div>
               <div className="font-mono tabular-nums text-[#ECF2EE] mt-0.5">
-                {isConnected ? activeNode.host : 'Local ISP'}
+                {isConnected && activeNode ? activeNode.host : 'Disconnected'}
               </div>
             </div>
             <div>
               <div className="text-[#78887F]">Node Latency</div>
               <div
                 className={`font-mono tabular-nums mt-0.5 ${
-                  getLatencyTone(activeNode.latencyMs).color
+                  getLatencyTone(activeNode?.latencyMs ?? null).color
                 }`}
               >
-                {getLatencyTone(activeNode.latencyMs).text}
+                {activeNode ? getLatencyTone(activeNode.latencyMs).text : '—'}
               </div>
             </div>
           </div>
@@ -410,7 +412,15 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
 
         {/* High-Density Node Table */}
         <div className="divide-y divide-[#17201B]">
-          {filteredNodes.length === 0 ? (
+          {nodes.length === 0 ? (
+            <div className="py-12 px-6 text-center">
+              <Globe className="w-8 h-8 text-[#4F5E55] mx-auto mb-2" />
+              <p className="text-sm font-medium text-[#ECF2EE]">No server profiles yet</p>
+              <p className="text-xs text-[#8A9990] mt-1">
+                Import a subscription or server URI (vless://, vmess://, trojan://, ss://) to begin.
+              </p>
+            </div>
+          ) : filteredNodes.length === 0 ? (
             <div className="py-12 px-6 text-center">
               <Globe className="w-8 h-8 text-[#4F5E55] mx-auto mb-2" />
               <p className="text-sm font-medium text-[#ECF2EE]">No matching server nodes</p>
@@ -420,7 +430,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             </div>
           ) : (
             filteredNodes.map((node) => {
-              const isSelected = node.id === activeNode.id;
+              const isSelected = activeNode ? node.id === activeNode.id : false;
               const latency = getLatencyTone(node.latencyMs);
               return (
                 <div

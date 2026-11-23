@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ClipboardPaste, Link2, Terminal, X } from 'lucide-react';
-import { NodeProtocol, ServerNode, Subscription } from '../types/vpn';
+import { ClipboardPaste, Link2, Loader2, Terminal, X } from 'lucide-react';
+import { ServerNode, Subscription } from '../types/vpn';
+import { GhostApi } from '../services/api';
 
 interface AddProfileModalProps {
   isOpen: boolean;
@@ -19,122 +20,79 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
   const [subName, setSubName] = useState('');
   const [subUrl, setSubUrl] = useState('');
   const [rawUri, setRawUri] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleInsertSampleUri = () => {
-    setRawUri('vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@195.181.162.88:443?type=tcp&security=reality&flow=xtls-rprx-vision#Stockholm%20SE-01');
-    setError(null);
+  const handlePasteClipboardSub = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setSubUrl(text.trim());
+        setError(null);
+      }
+    } catch {
+      setError('Unable to read from clipboard. Please paste manually.');
+    }
   };
 
-  const handleInsertSampleSub = () => {
-    setSubName('Baltic Edge Relay');
-    setSubUrl('https://sub.baltic-mesh.io/v2/profile/linux-x86_64?token=49ac72e1');
-    setError(null);
+  const handlePasteClipboardUri = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setRawUri(text.trim());
+        setError(null);
+      }
+    } catch {
+      setError('Unable to read from clipboard. Please paste manually.');
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
 
-    if (mode === 'subscription') {
-      const trimmedUrl = subUrl.trim();
-      if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-        setError('Enter a valid http:// or https:// subscription endpoint.');
+    try {
+      if (mode === 'subscription') {
+        const trimmedUrl = subUrl.trim();
+        if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+          setError('Enter a valid http:// or https:// subscription endpoint.');
+          setLoading(false);
+          return;
+        }
+
+        const newSub = await GhostApi.importSubscription(trimmedUrl, subName.trim() || undefined);
+        const allNodes = await GhostApi.listNodes();
+        const subNodes = allNodes.filter((n) => n.subscriptionId === newSub.id);
+        onAddSubscription(newSub, subNodes);
+        setSubName('');
+        setSubUrl('');
+        onClose();
         return;
       }
-      const id = `sub-${Date.now()}`;
-      const name = subName.trim() || new URL(trimmedUrl).hostname;
-      const newSub: Subscription = {
-        id,
-        name,
-        url: trimmedUrl,
-        usedGb: 0,
-        totalGb: 1000,
-        expiresAt: '2027-11-22',
-        lastUpdated: 'Just now',
-        autoUpdateHours: 12,
-      };
-      const generatedNodes: ServerNode[] = [
-        {
-          id: `node-${Date.now()}-1`,
-          name: `${name.split(' ')[0]} Tallinn EE-01`,
-          countryCode: 'EE',
-          city: 'Tallinn',
-          country: 'Estonia',
-          protocol: 'VLESS',
-          transport: 'TCP · Vision',
-          security: 'Reality',
-          host: '185.158.248.31',
-          port: 443,
-          latencyMs: 36,
-          loadPercent: 18,
-          subscriptionId: id,
-        },
-        {
-          id: `node-${Date.now()}-2`,
-          name: `${name.split(' ')[0]} Riga LV-01`,
-          countryCode: 'LV',
-          city: 'Riga',
-          country: 'Latvia',
-          protocol: 'Hysteria2',
-          transport: 'QUIC · BBR',
-          security: 'TLS 1.3',
-          host: '91.219.236.14',
-          port: 8443,
-          latencyMs: 41,
-          loadPercent: 22,
-          subscriptionId: id,
-        },
-      ];
-      onAddSubscription(newSub, generatedNodes);
-      setSubName('');
-      setSubUrl('');
-      onClose();
-      return;
+
+      const trimmedUri = rawUri.trim();
+      if (!trimmedUri) {
+        setError('Please paste a valid server share URI.');
+        setLoading(false);
+        return;
+      }
+
+      const res = await GhostApi.importProfile(trimmedUri);
+      if (res && res.node) {
+        onAddSingleNode(res.node);
+        setRawUri('');
+        onClose();
+      } else {
+        throw new Error('Daemon did not return imported node');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to import configuration from daemon');
+    } finally {
+      setLoading(false);
     }
-
-    const trimmedUri = rawUri.trim();
-    const supportedPrefixes = ['vless://', 'hy2://', 'hysteria2://', 'trojan://', 'wg://'];
-    const matchedPrefix = supportedPrefixes.find((p) => trimmedUri.toLowerCase().startsWith(p));
-    if (!matchedPrefix) {
-      setError('URI must start with vless://, hy2://, trojan://, or wg://');
-      return;
-    }
-
-    let protocol: NodeProtocol = 'VLESS';
-    if (matchedPrefix.startsWith('hy')) protocol = 'Hysteria2';
-    else if (matchedPrefix.startsWith('trojan')) protocol = 'Trojan';
-    else if (matchedPrefix.startsWith('wg')) protocol = 'WireGuard';
-
-    const hashIndex = trimmedUri.indexOf('#');
-    const parsedLabel =
-      hashIndex !== -1 ? decodeURIComponent(trimmedUri.slice(hashIndex + 1)).trim() : '';
-
-    const hostMatch = trimmedUri.match(/@([^:/?#]+):(\d+)/);
-    const host = hostMatch ? hostMatch[1] : '195.181.162.88';
-    const port = hostMatch ? Number(hostMatch[2]) : 443;
-
-    const newNode: ServerNode = {
-      id: `node-${Date.now()}`,
-      name: parsedLabel || `${protocol} Custom Node`,
-      countryCode: 'SE',
-      city: parsedLabel ? parsedLabel.split(' ')[0] : 'Stockholm',
-      country: 'Custom Endpoint',
-      protocol,
-      transport: protocol === 'Hysteria2' ? 'QUIC · BBR' : protocol === 'WireGuard' ? 'UDP · Kernel' : 'TCP · Vision',
-      security: protocol === 'VLESS' ? 'Reality' : protocol === 'WireGuard' ? 'Noise_IK' : 'TLS 1.3',
-      host,
-      port,
-      latencyMs: 33,
-      loadPercent: 15,
-      subscriptionId: 'sub-personal',
-    };
-
-    onAddSingleNode(newNode);
-    setRawUri('');
-    onClose();
   };
 
   return (
@@ -204,14 +162,14 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
             <>
               <div>
                 <label className="block text-xs font-medium text-[#B3C0B8] mb-1.5" htmlFor="sub-name">
-                  Profile Name
+                  Profile Name (Optional)
                 </label>
                 <input
                   id="sub-name"
                   type="text"
                   value={subName}
                   onChange={(e) => setSubName(e.target.value)}
-                  placeholder="e.g. Baltic Edge Relay"
+                  placeholder="e.g. My VPN Subscription"
                   className="w-full px-3.5 py-2.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-sm text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E]"
                 />
               </div>
@@ -222,16 +180,17 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                   </label>
                   <button
                     type="button"
-                    onClick={handleInsertSampleSub}
+                    onClick={handlePasteClipboardSub}
                     className="inline-flex items-center gap-1.5 text-xs text-[#22C55E] hover:text-[#4ADE80] transition-colors"
                   >
                     <ClipboardPaste className="w-3.5 h-3.5" />
-                    Paste Sample URL
+                    Paste Clipboard
                   </button>
                 </div>
                 <input
                   id="sub-url"
                   type="text"
+                  required
                   value={subUrl}
                   onChange={(e) => setSubUrl(e.target.value)}
                   placeholder="https://example.com/api/v1/subscribe?token=..."
@@ -243,20 +202,21 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-medium text-[#B3C0B8]" htmlFor="raw-uri">
-                  Share Link (VLESS, Hysteria2, Trojan, WireGuard)
+                  Share Link (vless://, vmess://, trojan://, ss://)
                 </label>
                 <button
                   type="button"
-                  onClick={handleInsertSampleUri}
+                  onClick={handlePasteClipboardUri}
                   className="inline-flex items-center gap-1.5 text-xs text-[#22C55E] hover:text-[#4ADE80] transition-colors"
                 >
                   <ClipboardPaste className="w-3.5 h-3.5" />
-                  Paste Sample URI
+                  Paste Clipboard
                 </button>
               </div>
               <textarea
                 id="raw-uri"
                 rows={4}
+                required
                 value={rawUri}
                 onChange={(e) => setRawUri(e.target.value)}
                 placeholder="vless://uuid@host:443?security=reality#NodeName"
@@ -275,14 +235,17 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              disabled={loading}
               className="px-4 py-2 rounded-lg text-xs font-medium text-[#98A69E] hover:text-[#ECF2EE] hover:bg-[#18201B] transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#22C55E] text-[#05140A] hover:bg-[#16A34A] transition-colors"
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-[#22C55E] text-[#05140A] hover:bg-[#16A34A] transition-colors disabled:opacity-60"
             >
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {mode === 'subscription' ? 'Fetch & Import' : 'Add Node'}
             </button>
           </div>

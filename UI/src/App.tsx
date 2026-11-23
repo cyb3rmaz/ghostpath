@@ -63,6 +63,8 @@ const nowTimestamp = () => {
   return `${base}.${ms}`;
 };
 
+let logCounter = 0;
+
 export default function App() {
   const [activeSection, setActiveSection] = useState<NavSection>('tunnel');
   const [daemonHealth, setDaemonHealth] = useState<DaemonHealth | null>(null);
@@ -73,13 +75,13 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
 
-  const [status, setStatus] = useState<ConnectionStatus>('connected');
+  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [routingMode, setRoutingMode] = useState<RoutingMode>('rule');
   const [interfaceMode, setInterfaceMode] = useState<NetworkInterfaceMode>('tun');
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(INITIAL_SUBSCRIPTIONS);
   const [nodes, setNodes] = useState<ServerNode[]>(INITIAL_NODES);
-  const [activeNodeId, setActiveNodeId] = useState<string>(INITIAL_NODES[0].id);
+  const [activeNodeId, setActiveNodeId] = useState<string>('');
   const [isPingingAll, setIsPingingAll] = useState(false);
 
   const [rules, setRules] = useState<RoutingRule[]>(INITIAL_RULES);
@@ -87,18 +89,12 @@ export default function App() {
   const [logsPaused, setLogsPaused] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
 
-  const [sessionSeconds, setSessionSeconds] = useState<number>(872);
-  const [downloadMbps, setDownloadMbps] = useState<number>(48.6);
-  const [uploadMbps, setUploadMbps] = useState<number>(11.4);
-  const [totalDownMb, setTotalDownMb] = useState<number>(642.4);
-  const [totalUpMb, setTotalUpMb] = useState<number>(128.9);
-  const [trafficHistory, setTrafficHistory] = useState<TrafficPoint[]>(() =>
-    INITIAL_TRAFFIC_HISTORY.map((pt, idx) => ({
-      ...pt,
-      downloadMbps: Number((28 + Math.sin(idx * 0.55) * 16 + (idx % 3) * 4).toFixed(1)),
-      uploadMbps: Number((6 + Math.cos(idx * 0.45) * 4 + (idx % 2) * 2).toFixed(1)),
-    }))
-  );
+  const [sessionSeconds, setSessionSeconds] = useState<number>(0);
+  const [downloadMbps, setDownloadMbps] = useState<number>(0.0);
+  const [uploadMbps, setUploadMbps] = useState<number>(0.0);
+  const [totalDownMb, setTotalDownMb] = useState<number>(0.0);
+  const [totalUpMb, setTotalUpMb] = useState<number>(0.0);
+  const [trafficHistory, setTrafficHistory] = useState<TrafficPoint[]>(INITIAL_TRAFFIC_HISTORY);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -113,17 +109,18 @@ export default function App() {
   }, [toastMessage]);
 
   const activeNode = useMemo(
-    () => nodes.find((n) => n.id === activeNodeId) || nodes[0],
+    () => nodes.find((n) => n.id === activeNodeId) || nodes[0] || null,
     [nodes, activeNodeId]
   );
 
   const appendLog = useCallback(
     (level: DiagnosticLog['level'], component: string, message: string) => {
       if (logsPaused) return;
+      logCounter += 1;
       setLogs((prev) => [
         ...prev.slice(-149),
         {
-          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          id: `log-${Date.now()}-${logCounter}`,
           timestamp: nowTimestamp(),
           level,
           component,
@@ -134,33 +131,17 @@ export default function App() {
     [logsPaused]
   );
 
-  // Live session timer & simulated throughput stream while connected
+  // Live session timer while connected
   useEffect(() => {
     if (status !== 'connected') {
       setDownloadMbps(0);
       setUploadMbps(0);
+      setSessionSeconds(0);
       return;
     }
 
     const interval = setInterval(() => {
       setSessionSeconds((s) => s + 1);
-
-      const nextDl = Number((32 + Math.random() * 54).toFixed(1));
-      const nextUl = Number((5 + Math.random() * 14).toFixed(1));
-
-      setDownloadMbps(nextDl);
-      setUploadMbps(nextUl);
-      setTotalDownMb((prev) => prev + nextDl / 8);
-      setTotalUpMb((prev) => prev + nextUl / 8);
-
-      setTrafficHistory((prev) => [
-        ...prev.slice(1),
-        {
-          time: String(new Date().getSeconds()).padStart(2, '0'),
-          downloadMbps: nextDl,
-          uploadMbps: nextUl,
-        },
-      ]);
     }, 1000);
 
     return () => clearInterval(interval);
@@ -172,11 +153,18 @@ export default function App() {
 
     GhostApi.getStatus()
       .then((res) => {
-        if (res.status) {
+        if (res && res.status) {
           setStatus(res.status);
         }
-        if (res.activeNode) {
+        if (res && res.activeNode) {
           setActiveNodeId(res.activeNode.id);
+        }
+        if (res && res.traffic) {
+          setDownloadMbps(res.traffic.downloadMbps || 0.0);
+          setUploadMbps(res.traffic.uploadMbps || 0.0);
+          setTotalDownMb(res.traffic.totalDownMb || 0.0);
+          setTotalUpMb(res.traffic.totalUpMb || 0.0);
+          setSessionSeconds(res.traffic.sessionSeconds || 0);
         }
       })
       .catch(() => {});
@@ -185,6 +173,23 @@ export default function App() {
       .then((loadedNodes) => {
         if (loadedNodes && loadedNodes.length > 0) {
           setNodes(loadedNodes);
+          setActiveNodeId((prev) => prev || loadedNodes[0].id);
+        }
+      })
+      .catch(() => {});
+
+    GhostApi.listSubscriptions()
+      .then((subs) => {
+        if (subs && subs.length > 0) {
+          setSubscriptions(subs);
+        }
+      })
+      .catch(() => {});
+
+    GhostApi.listRules()
+      .then((loadedRules) => {
+        if (loadedRules && loadedRules.length > 0) {
+          setRules(loadedRules);
         }
       })
       .catch(() => {});
@@ -215,14 +220,14 @@ export default function App() {
     });
 
     const unlistenState = GhostApi.onStateChanged((stateData) => {
-      if (stateData.status) {
+      if (stateData && stateData.status) {
         setStatus(stateData.status);
       }
     });
 
     const unlistenDeepLink = GhostApi.onDeepLinkImported((link) => {
       showToast(`Received link: ${link.substring(0, 30)}...`);
-      setShowAddModal(true);
+      setImportModalOpen(true);
     });
 
     const unlistenTray = GhostApi.onTrayToggleConnect?.(() => {
@@ -257,6 +262,11 @@ export default function App() {
     }
 
     if (status === 'disconnected') {
+      if (!activeNode) {
+        showToast('No server profiles available. Please import a profile first.');
+        setImportModalOpen(true);
+        return;
+      }
       setStatus('connecting');
       appendLog(
         'info',
@@ -302,52 +312,48 @@ export default function App() {
     }
   };
 
-  const handlePingNode = (nodeId: string) => {
+  const handlePingNode = async (nodeId: string) => {
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, pinging: true } : n))
     );
-    setTimeout(() => {
+    try {
+      const res = await GhostApi.pingNode(nodeId);
       setNodes((prev) =>
-        prev.map((n) => {
-          if (n.id !== nodeId) return n;
-          const base = n.latencyMs ?? 45;
-          const jitter = Math.floor(Math.random() * 11) - 5;
-          return {
-            ...n,
-            pinging: false,
-            latencyMs: Math.max(12, base + jitter),
-          };
-        })
+        prev.map((n) => (n.id === nodeId ? { ...n, pinging: false, latencyMs: res.latencyMs } : n))
       );
-    }, 320);
+    } catch {
+      setNodes((prev) =>
+        prev.map((n) => (n.id === nodeId ? { ...n, pinging: false, latencyMs: null } : n))
+      );
+    }
   };
 
-  const handlePingAll = () => {
-    if (isPingingAll) return;
+  const handlePingAll = async () => {
+    if (isPingingAll || nodes.length === 0) return;
     setIsPingingAll(true);
     setNodes((prev) => prev.map((n) => ({ ...n, pinging: true })));
 
-    nodes.forEach((node, index) => {
-      setTimeout(() => {
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (n.id !== node.id) return n;
-            const base = n.latencyMs ?? 48;
-            const jitter = Math.floor(Math.random() * 13) - 6;
-            return {
-              ...n,
-              pinging: false,
-              latencyMs: Math.max(11, base + jitter),
-            };
-          })
-        );
-        if (index === nodes.length - 1) {
-          setIsPingingAll(false);
-          appendLog('info', 'probe/icmp', `Completed TCP/QUIC latency sweep across ${nodes.length} nodes`);
-          showToast(`Latency tested for ${nodes.length} nodes`);
-        }
-      }, 150 + index * 90);
-    });
+    try {
+      const res = await GhostApi.pingAll();
+      const latencyMap = new Map<string, number | null>();
+      for (const r of res.results) {
+        latencyMap.set(r.nodeId, r.latencyMs);
+      }
+      setNodes((prev) =>
+        prev.map((n) => ({
+          ...n,
+          pinging: false,
+          latencyMs: latencyMap.has(n.id) ? latencyMap.get(n.id)! : n.latencyMs,
+        }))
+      );
+      appendLog('info', 'probe/icmp', `Completed latency sweep across ${nodes.length} nodes`);
+      showToast(`Latency tested for ${nodes.length} nodes`);
+    } catch (e: any) {
+      setNodes((prev) => prev.map((n) => ({ ...n, pinging: false })));
+      showToast(`Ping sweep failed: ${e?.message || 'Daemon error'}`);
+    } finally {
+      setIsPingingAll(false);
+    }
   };
 
   const handleChangeRoutingMode = (mode: RoutingMode) => {
@@ -371,6 +377,9 @@ export default function App() {
   const handleAddSubscription = (sub: Subscription, importedNodes: ServerNode[]) => {
     setSubscriptions((prev) => [sub, ...prev]);
     setNodes((prev) => [...importedNodes, ...prev]);
+    if (importedNodes.length > 0 && !activeNodeId) {
+      setActiveNodeId(importedNodes[0].id);
+    }
     appendLog('info', 'sub/sync', `Imported subscription "${sub.name}" (+${importedNodes.length} nodes)`);
     showToast(`Imported ${sub.name} (${importedNodes.length} nodes)`);
   };
@@ -382,44 +391,69 @@ export default function App() {
     showToast(`Added node ${node.name}`);
   };
 
-  const handleRefreshSubscription = (id: string) => {
+  const handleRefreshSubscription = async (id: string) => {
     setSubscriptions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, updating: true } : s))
     );
-    setTimeout(() => {
+    try {
+      const updated = await GhostApi.refreshSubscription(id);
       setSubscriptions((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, updating: false, lastUpdated: 'Just now' } : s
-        )
+        prev.map((s) => (s.id === id ? { ...updated, updating: false } : s))
       );
-      showToast('Subscription synchronized');
-    }, 550);
-  };
-
-  const handleRefreshAllSubs = () => {
-    setSubscriptions((prev) => prev.map((s) => ({ ...s, updating: true })));
-    setTimeout(() => {
+      const reloadedNodes = await GhostApi.listNodes();
+      if (reloadedNodes) setNodes(reloadedNodes);
+      showToast(`Subscription synchronized`);
+    } catch (e: any) {
       setSubscriptions((prev) =>
-        prev.map((s) => ({ ...s, updating: false, lastUpdated: 'Just now' }))
+        prev.map((s) => (s.id === id ? { ...s, updating: false } : s))
       );
-      appendLog('info', 'sub/sync', `Synchronized ${subscriptions.length} remote subscriptions`);
-      showToast('All subscriptions synchronized');
-    }, 650);
-  };
-
-  const handleDeleteSubscription = (id: string) => {
-    const target = subscriptions.find((s) => s.id === id);
-    setSubscriptions((prev) => prev.filter((s) => s.id !== id));
-    setNodes((prev) => prev.filter((n) => n.subscriptionId !== id));
-    if (target) {
-      showToast(`Removed ${target.name}`);
+      showToast(`Sync failed: ${e?.message || 'Network error'}`);
     }
   };
 
-  const handleToggleRule = (id: string) => {
-    setRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
-    );
+  const handleRefreshAllSubs = async () => {
+    if (subscriptions.length === 0) return;
+    setSubscriptions((prev) => prev.map((s) => ({ ...s, updating: true })));
+    try {
+      for (const sub of subscriptions) {
+        await GhostApi.refreshSubscription(sub.id);
+      }
+      const updatedSubs = await GhostApi.listSubscriptions();
+      if (updatedSubs) setSubscriptions(updatedSubs);
+      const reloadedNodes = await GhostApi.listNodes();
+      if (reloadedNodes) setNodes(reloadedNodes);
+      appendLog('info', 'sub/sync', `Synchronized ${subscriptions.length} remote subscriptions`);
+      showToast('All subscriptions synchronized');
+    } catch (e: any) {
+      showToast(`Sync error: ${e?.message || 'Network error'}`);
+    } finally {
+      setSubscriptions((prev) => prev.map((s) => ({ ...s, updating: false })));
+    }
+  };
+
+  const handleDeleteSubscription = async (id: string) => {
+    const target = subscriptions.find((s) => s.id === id);
+    try {
+      await GhostApi.deleteSubscription(id);
+      setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+      setNodes((prev) => prev.filter((n) => n.subscriptionId !== id));
+      if (target) {
+        showToast(`Removed ${target.name}`);
+      }
+    } catch (e: any) {
+      showToast(`Delete failed: ${e?.message || 'Daemon error'}`);
+    }
+  };
+
+  const handleToggleRule = async (id: string) => {
+    try {
+      const res = await GhostApi.toggleRule(id);
+      setRules((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, enabled: res.enabled } : r))
+      );
+    } catch (e: any) {
+      showToast(`Rule update failed: ${e?.message || 'Daemon error'}`);
+    }
   };
 
   const handleChangeRuleAction = (id: string, action: RuleAction) => {
@@ -428,19 +462,25 @@ export default function App() {
     );
   };
 
-  const handleDeleteRule = (id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
-    showToast('Routing rule removed');
+  const handleDeleteRule = async (id: string) => {
+    try {
+      await GhostApi.deleteRule(id);
+      setRules((prev) => prev.filter((r) => r.id !== id));
+      showToast('Routing rule removed');
+    } catch (e: any) {
+      showToast(`Delete rule failed: ${e?.message || 'Daemon error'}`);
+    }
   };
 
-  const handleAddRule = (rule: Omit<RoutingRule, 'id'>) => {
-    const created: RoutingRule = {
-      ...rule,
-      id: `rule-${Date.now()}`,
-    };
-    setRules((prev) => [created, ...prev]);
-    appendLog('info', 'router/rules', `Added rule ${rule.pattern} -> ${rule.action}`);
-    showToast('Routing rule added');
+  const handleAddRule = async (rule: Omit<RoutingRule, 'id'>) => {
+    try {
+      const created = await GhostApi.addRule(rule);
+      setRules((prev) => [created, ...prev]);
+      appendLog('info', 'router/rules', `Added rule ${rule.pattern} -> ${rule.action}`);
+      showToast('Routing rule added');
+    } catch (e: any) {
+      showToast(`Add rule failed: ${e?.message || 'Daemon error'}`);
+    }
   };
 
   const handleCopyText = (label: string, text: string) => {
