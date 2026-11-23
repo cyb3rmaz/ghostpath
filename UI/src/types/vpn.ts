@@ -6,7 +6,7 @@ export type RoutingMode = 'rule' | 'global' | 'direct';
 
 export type NetworkInterfaceMode = 'tun' | 'system-proxy';
 
-export type NodeProtocol = 'VLESS' | 'Hysteria2' | 'WireGuard' | 'Trojan';
+export type NodeProtocol = 'VLESS' | 'Hysteria2' | 'WireGuard' | 'Trojan' | 'VMess' | 'Shadowsocks' | 'AmneziaWG';
 
 export type CoreEngine = 'sing-box' | 'xray-core';
 

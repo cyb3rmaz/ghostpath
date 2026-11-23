@@ -233,7 +233,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       : 'text-[#8A9990] hover:text-[#ECF2EE]'
                   }`}
                 >
-                  TUN (ghost0)
+                  TUN ({activeNode?.protocol === 'AmneziaWG' || activeNode?.protocol === 'WireGuard' ? 'awg-ghost0' : 'ghost0'})
                 </button>
                 <button
                   type="button"
@@ -377,10 +377,13 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                 className="px-2.5 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] focus:outline-none focus:border-[#22C55E]"
               >
                 <option value="all">All Protocols</option>
+                <option value="AmneziaWG">AmneziaWG</option>
+                <option value="WireGuard">WireGuard</option>
                 <option value="VLESS">VLESS</option>
                 <option value="Hysteria2">Hysteria2</option>
-                <option value="WireGuard">WireGuard</option>
                 <option value="Trojan">Trojan</option>
+                <option value="VMess">VMess</option>
+                <option value="Shadowsocks">Shadowsocks</option>
               </select>
             </div>
 

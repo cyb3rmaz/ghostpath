@@ -1,10 +1,20 @@
-use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use anyhow::Result;
+#[cfg(unix)]
+use anyhow::Context;
+use serde_json::Value;
+#[cfg(unix)]
+use serde_json::json;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+#[cfg(unix)]
+use std::sync::atomic::Ordering;
+#[cfg(unix)]
 use std::time::Duration;
+#[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::UnixStream;
+#[cfg(unix)]
 use tracing::debug;
 
 pub const DEFAULT_SOCKET_PATH: &str = "/run/ghostpath/ghostpathd.sock";
@@ -125,6 +135,7 @@ impl IpcClient {
         }
         #[cfg(not(unix))]
         {
+            let _ = (method, params);
             anyhow::bail!("Unix domain sockets are unsupported on this platform");
         }
     }

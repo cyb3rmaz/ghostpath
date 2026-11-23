@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ClipboardPaste, Link2, Loader2, Terminal, X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { AlertTriangle, ClipboardPaste, FileCode, Link2, Loader2, Terminal, X } from 'lucide-react';
 import { ServerNode, Subscription } from '../types/vpn';
 import { GhostApi } from '../services/api';
 
@@ -22,6 +22,8 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
   const [rawUri, setRawUri] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unsupportedNotice, setUnsupportedNotice] = useState<{ container: string; reason: string }[] | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -49,9 +51,29 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
     }
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        setRawUri(content.trim());
+        setMode('uri');
+        setError(null);
+      }
+    };
+    reader.onerror = () => {
+      setError('Failed to read config file');
+    };
+    reader.readAsText(file);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnsupportedNotice(null);
     setLoading(true);
 
     try {
@@ -75,13 +97,27 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
 
       const trimmedUri = rawUri.trim();
       if (!trimmedUri) {
-        setError('Please paste a valid server share URI.');
+        setError('Please paste a valid server share URI or config file.');
         setLoading(false);
         return;
       }
 
       const res = await GhostApi.importProfile(trimmedUri);
-      if (res && res.node) {
+      if (res && res.type === 'amnezia_multi') {
+        if (res.nodes && Array.isArray(res.nodes)) {
+          for (const node of res.nodes) {
+            onAddSingleNode(node);
+          }
+        }
+        if (res.unsupportedContainers && res.unsupportedContainers.length > 0) {
+          setUnsupportedNotice(res.unsupportedContainers);
+          setRawUri('');
+          setLoading(false);
+          return;
+        }
+        setRawUri('');
+        onClose();
+      } else if (res && res.node) {
         onAddSingleNode(res.node);
         setRawUri('');
         onClose();
@@ -202,16 +238,33 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-medium text-[#B3C0B8]" htmlFor="raw-uri">
-                  Share Link (vless://, vmess://, trojan://, ss://)
+                  Share Link / Config (vless://, vmess://, vpn://, .conf)
                 </label>
-                <button
-                  type="button"
-                  onClick={handlePasteClipboardUri}
-                  className="inline-flex items-center gap-1.5 text-xs text-[#22C55E] hover:text-[#4ADE80] transition-colors"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5" />
-                  Paste Clipboard
-                </button>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".conf,.vpn,text/plain"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 text-xs text-[#8A9990] hover:text-[#ECF2EE] transition-colors"
+                  >
+                    <FileCode className="w-3.5 h-3.5" />
+                    Browse File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePasteClipboardUri}
+                    className="inline-flex items-center gap-1.5 text-xs text-[#22C55E] hover:text-[#4ADE80] transition-colors"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    Paste Clipboard
+                  </button>
+                </div>
               </div>
               <textarea
                 id="raw-uri"
@@ -219,9 +272,34 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                 required
                 value={rawUri}
                 onChange={(e) => setRawUri(e.target.value)}
-                placeholder="vless://uuid@host:443?security=reality#NodeName"
+                placeholder="vless://... or vpn://... or paste [Interface] / [Peer] WireGuard config"
                 className="w-full px-3.5 py-2.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs font-mono text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E] resize-none"
               />
+            </div>
+          )}
+
+          {unsupportedNotice && (
+            <div className="p-3 rounded-lg bg-[#F59E0B]/10 border border-[#F59E0B]/30 space-y-1">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#FBBF24]">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Notice: Some Amnezia containers were skipped</span>
+              </div>
+              <ul className="text-[11px] text-[#D1D5DB] space-y-1 pl-6 list-disc">
+                {unsupportedNotice.map((item, idx) => (
+                  <li key={idx}>
+                    <span className="font-mono text-[#FBBF24]">{item.container}</span>: {item.reason}
+                  </li>
+                ))}
+              </ul>
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3 py-1 rounded bg-[#F59E0B]/20 text-xs font-medium text-[#FBBF24] hover:bg-[#F59E0B]/30"
+                >
+                  Dismiss & View Imported Profiles
+                </button>
+              </div>
             </div>
           )}
 

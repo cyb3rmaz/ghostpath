@@ -42,7 +42,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["vless", "vmess", "trojan", "ss"]
+        "schemes": ["vless", "vmess", "trojan", "ss", "vpn", "wireguard"]
       }
     }
   }

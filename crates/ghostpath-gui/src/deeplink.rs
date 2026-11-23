@@ -13,16 +13,22 @@ pub fn parse_vpn_deep_link(uri_str: &str) -> Option<VpnLinkInfo> {
     let lower = trimmed.to_lowercase();
 
     let protocols = [
+        "vpn://",
         "vless://",
         "vmess://",
         "trojan://",
         "ss://",
         "hysteria2://",
         "tuic://",
+        "wireguard://",
     ];
     let matched_proto = protocols.iter().find(|p| lower.starts_with(*p))?;
 
-    let proto_name = matched_proto.trim_end_matches("://").to_uppercase();
+    let proto_name = if *matched_proto == "vpn://" {
+        "AMNEZIA".to_string()
+    } else {
+        matched_proto.trim_end_matches("://").to_uppercase()
+    };
 
     // Extract optional name from URL fragment (#Name)
     let name = if let Some(hash_idx) = trimmed.find('#') {
@@ -63,6 +69,15 @@ mod tests {
         let info = parse_vpn_deep_link(uri).unwrap();
         assert_eq!(info.protocol, "VMESS");
         assert_eq!(info.name, None);
+    }
+
+    #[test]
+    fn test_parse_amnezia_vpn_deep_link() {
+        let uri = "vpn://AAAA...#My%20Amnezia%20Server";
+        let info = parse_vpn_deep_link(uri).unwrap();
+        assert_eq!(info.protocol, "AMNEZIA");
+        assert_eq!(info.name.as_deref(), Some("My Amnezia Server"));
+        assert_eq!(info.raw, uri);
     }
 
     #[test]
