@@ -35,6 +35,9 @@ package() {
     install -Dm755 target/release/ghostpath "$pkgdir/usr/bin/ghostpath"
     install -Dm755 target/release/ghostpathd "$pkgdir/usr/bin/ghostpathd"
     install -Dm755 target/release/ghostpath-gui "$pkgdir/usr/bin/ghostpath-gui"
+    if [ -f packaging/bin/amneziawg-go ]; then
+        install -Dm755 packaging/bin/amneziawg-go "$pkgdir/usr/bin/amneziawg-go"
+    fi
 
     install -Dm644 systemd/ghostpathd.service "$pkgdir/usr/lib/systemd/system/ghostpathd.service"
     install -Dm644 packaging/ghostpath.desktop "$pkgdir/usr/share/applications/ghostpath.desktop"

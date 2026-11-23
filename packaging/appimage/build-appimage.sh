@@ -25,6 +25,12 @@ mkdir -p "${APP_DIR}/usr/share/metainfo"
 cp target/release/ghostpath "${APP_DIR}/usr/bin/"
 cp target/release/ghostpathd "${APP_DIR}/usr/bin/"
 cp target/release/ghostpath-gui "${APP_DIR}/usr/bin/"
+if [ -f "packaging/bin/amneziawg-go" ]; then
+    cp packaging/bin/amneziawg-go "${APP_DIR}/usr/bin/"
+elif command -v amneziawg-go >/dev/null 2>&1; then
+    cp "$(command -v amneziawg-go)" "${APP_DIR}/usr/bin/"
+fi
+chmod +x "${APP_DIR}/usr/bin/"*
 
 # Copy desktop and AppStream metadata
 cp packaging/ghostpath.desktop "${APP_DIR}/"

@@ -13,11 +13,11 @@
     <p>Features:</p>
     <ul>
       <li>Full Linux TUN capturing (ghost0) with split tunneling and dedicated routing table priority</li>
-      <li>Support for VLESS with Reality &amp; Vision, VMess, Trojan, and Shadowsocks</li>
+      <li>Support for AmneziaVPN (vpn://, .conf, .vpn), AmneziaWG obfuscation, VLESS with Reality &amp; Vision, VMess, Trojan, Shadowsocks, and WireGuard</li>
       <li>System tray integration with quick connect and auto-start capability</li>
       <li>Zero DNS leaks with systemd-resolved and encrypted DoH fallback</li>
       <li>Coexistence with WireGuard, OpenVPN, Tailscale, and Docker networks</li>
-      <li>Direct URI scheme support (vless://, vmess://, trojan://, ss://)</li>
+      <li>Direct URI scheme support (vless://, vmess://, trojan://, ss://, vpn://, wireguard://)</li>
     </ul>
   </description>
   <launchable type="desktop-id">ghostpath.desktop</launchable>
@@ -30,6 +30,8 @@
     <mediatype>x-scheme-handler/vmess</mediatype>
     <mediatype>x-scheme-handler/trojan</mediatype>
     <mediatype>x-scheme-handler/ss</mediatype>
+    <mediatype>x-scheme-handler/vpn</mediatype>
+    <mediatype>x-scheme-handler/wireguard</mediatype>
   </provides>
   <developer id="com.ghostpath.vpn">
     <name>GhostPath Team</name>

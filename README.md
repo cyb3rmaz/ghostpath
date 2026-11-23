@@ -8,7 +8,7 @@
 
 **GhostPath VPN** is a high-performance, native Linux VPN client written in Rust, engineered specifically to provide **bulletproof, reliable TUN mode** under severe and hostile internet filtering conditions (such as the national censorship infrastructure in Iran).
 
-Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and systemd-resolved conflicts on Linux, GhostPath VPN employs kernel-level policy routing, socket fwmark exclusion, strict encrypted DNS tunneling, and robust multi-VPN coexistence.
+Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and systemd-resolved conflicts on Linux, GhostPath VPN employs kernel-level policy routing, socket fwmark exclusion, strict encrypted DNS tunneling, robust multi-VPN coexistence, and full support for **AmneziaVPN / AmneziaWG obfuscated tunnels**.
 
 ---
 
@@ -42,6 +42,14 @@ Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and s
 ### 5. Strict nftables Kill Switch
 * Dedicated `inet` table `ghostpath` drops any non-local, non-tunnel traffic if the connection drops unexpectedly, while preserving LAN connectivity and DHCP leases.
 
+### 6. AmneziaVPN & AmneziaWG Obfuscated WireGuard
+* **The Problem:** Plain WireGuard handshakes are instantly identified and severed by state-level Deep Packet Inspection (DPI) due to distinct packet headers, fixed message lengths, and signature bytes.
+* **GhostPath's Solution:** Native support for AmneziaWG obfuscated protocol formats and parameters:
+  - **Obfuscation Parameters:** Junk packet count (`Jc`), junk byte size ranges (`Jmin`..`Jmax`), handshake init/response padding (`S1`..`S4`), and message type header overrides (`H1`..`H4`).
+  - **Decoders:** Bounded decompression (maximum 2 MB limit to eliminate zip bombs) for Qt `qCompress` encoded `vpn://` URI schemes, multi-container payloads, `.conf`, and `.vpn` configuration files.
+  - **Engine Runtime:** Supervised userspace `amneziawg-go` engine with outbound socket fwmark `0x4750` for zero-leak routing via `awg-ghost0`, plus optional kernel module detection.
+  - **Cryptographic Zeroization:** Private keys and preshared keys are protected in memory with `Zeroize` and erased upon drop. Sensitive keys are masked in UI and omitted from logs.
+
 ---
 
 ## 🏗️ Architecture & Crates
@@ -51,7 +59,7 @@ GhostPath VPN is organized as a modular Cargo workspace:
 | Crate | Purpose |
 | :--- | :--- |
 | **`ghostpath-core`** | Configuration manager (0600 permissions), state machine, event bus, and routing rules engine. |
-| **`ghostpath-proto`** | V2Ray-family URI parsers (`vless://`, `vmess://`, `trojan://`, `ss://`), subscriptions, sing-box/Xray supervisor. |
+| **`ghostpath-proto`** | V2Ray-family URI parsers (`vless://`, `vmess://`, `trojan://`, `ss://`), AmneziaVPN (`vpn://` Qt qCompress), AmneziaWG / WireGuard `.conf` parsers, subscriptions, sing-box/Xray supervisor. |
 | **`ghostpath-tun`** | Linux `/dev/net/tun` asynchronous packet I/O via Tokio `AsyncFd`. |
 | **`ghostpath-net`** | Netlink policy routing manager, `UndoJournal`, `DnsManager`, `DnsProxy`, and `KillSwitch`. |
 | **`ghostpath-daemon`** | Privileged system daemon (`ghostpathd`), `SO_PEERCRED` Unix socket IPC (`/run/ghostpath/ghostpathd.sock`). |
@@ -119,6 +127,13 @@ ghostpath status --json
 # Import a VLESS Reality, VMess, Trojan, or subscription URL
 ghostpath import "vless://uuid@server.com:443?security=reality&pbk=...#MyNode" --name "Frankfurt-01"
 
+# Import an AmneziaVPN key (vpn://) or AmneziaWG / WireGuard config file
+ghostpath import "vpn://...#MyAmneziaServer"
+ghostpath import /path/to/amnezia-warp.conf
+
+# List all stored profiles with protocol badges (VLESS, AmneziaWG, WireGuard, etc.)
+ghostpath profiles
+
 # Run comprehensive system diagnostics
 ghostpath doctor
 
@@ -146,6 +161,7 @@ Running GhostPath System Doctor...
   [PASS] Docker Bridge Isolation (docker0)
   [PASS] IPv6 Leak Protection Posture
   [PASS] Concurrent VPN Interfaces (coexistence active)
+  [PASS] AmneziaWG Engine (amneziawg-go userspace binary ready)
 ```
 
 ---

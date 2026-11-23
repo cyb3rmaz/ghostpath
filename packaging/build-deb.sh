@@ -20,6 +20,11 @@ echo "==> Copying binaries..."
 cp "${REPO_ROOT}/target/release/ghostpath" "${STAGING}/usr/bin/"
 cp "${REPO_ROOT}/target/release/ghostpathd" "${STAGING}/usr/bin/"
 cp "${REPO_ROOT}/target/release/ghostpath-gui" "${STAGING}/usr/bin/"
+if [ -f "${REPO_ROOT}/packaging/bin/amneziawg-go" ]; then
+    cp "${REPO_ROOT}/packaging/bin/amneziawg-go" "${STAGING}/usr/bin/"
+elif command -v amneziawg-go >/dev/null 2>&1; then
+    cp "$(command -v amneziawg-go)" "${STAGING}/usr/bin/"
+fi
 chmod 0755 "${STAGING}/usr/bin/"*
 
 echo "==> Copying systemd service..."
@@ -54,7 +59,8 @@ Recommends: systemd-resolved
 Homepage: https://github.com/cybermaz/ghost_path
 Description: GhostPath VPN - Native Linux VPN client with reliable TUN mode
  GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode
- on Linux, supporting VLESS/Reality, VMess, Trojan, and Shadowsocks protocols
+ on Linux, supporting AmneziaVPN (vpn://, .conf), AmneziaWG obfuscation,
+ VLESS/Reality, VMess, Trojan, Shadowsocks, and WireGuard protocols
  without routing loops, DNS leaks, or conflicts with other VPN clients.
 EOF
 chmod 0644 "${STAGING}/DEBIAN/control"

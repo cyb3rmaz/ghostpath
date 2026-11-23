@@ -23,7 +23,8 @@ Requires:       libappindicator-gtk3
 
 %description
 GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode
-on Linux, supporting VLESS/Reality, VMess, Trojan, and Shadowsocks protocols
+on Linux, supporting AmneziaVPN (vpn://, .conf), AmneziaWG obfuscation,
+VLESS/Reality, VMess, Trojan, Shadowsocks, and WireGuard protocols
 without routing loops, DNS leaks, or conflicts with other VPN clients.
 
 %prep
@@ -38,6 +39,9 @@ install -d -m 0755 %{buildroot}%{_bindir}
 install -m 0755 target/release/ghostpath %{buildroot}%{_bindir}/ghostpath
 install -m 0755 target/release/ghostpathd %{buildroot}%{_bindir}/ghostpathd
 install -m 0755 target/release/ghostpath-gui %{buildroot}%{_bindir}/ghostpath-gui
+if [ -f packaging/bin/amneziawg-go ]; then
+    install -m 0755 packaging/bin/amneziawg-go %{buildroot}%{_bindir}/amneziawg-go
+fi
 
 install -d -m 0755 %{buildroot}%{_unitdir}
 install -m 0644 systemd/ghostpathd.service %{buildroot}%{_unitdir}/ghostpathd.service

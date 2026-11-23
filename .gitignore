@@ -10,5 +10,6 @@ undo_journal.json
 *.deb
 *.rpm
 *.AppImage
+packaging/bin/
 
 /.superpowers
