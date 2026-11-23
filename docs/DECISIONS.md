@@ -52,8 +52,14 @@ This document records the architectural, network, and security decisions for **G
 - **Context:**
   The UI exists in `UI/` (React 19 + TypeScript + Tailwind CSS v4 + Vite).
 - **Decision:**
-  - Wrap `UI/` with **Tauri** in `ghostpath-gui`, compiling into native Linux desktop packages (`.deb`, `.rpm`, AppImage).
-  - For headless/server or browser access, `ghostpath-daemon` / `ghostpath-gui` can serve the compiled frontend on `127.0.0.1:<random-or-configured-port>` with strict CORS, CSP, and a per-session random auth token.
+  - Adopt **Tauri 2** with WebKitGTK in `ghostpath-gui` to turn GhostPath VPN into a native Linux desktop application.
+  - **No local HTTP server or browser dependency:** The desktop app is fully offline and self-contained; the UI does not make HTTP requests to `127.0.0.1` or any remote address.
+  - **Direct Unix Socket IPC:** Rust backend connects to `ghostpathd` at `/run/ghostpath/ghostpathd.sock` using unprivileged user credentials (with `ghostpath` group permissions), handling commands via Tauri `invoke` and real-time push events (`state_changed`, `traffic_updated`, `log_appended`) via Tauri window events.
+  - **Desktop Integration:** Native system tray with menu, single-instance window focusing, XDG autostart on login, desktop notifications, and deep link URI handler (`vless://`, `vmess://`, etc.).
+  - **Offline Security & CSP:** Strict CSP disabling remote scripts, styles, and fonts. Devtools disabled in release builds. All typography and assets bundled locally.
+  - **Rejected Alternatives:**
+    - *Electron:* Rejected due to ~150MB+ bundle size, redundant Chromium runtime, higher RAM usage, and unnecessary attack surface.
+    - *Raw `wry`/`tao`:* Evaluated as fallback; Tauri 2 provides superior capabilities, plugin ecosystem (single-instance, notifications, deep link), and security sandboxing out of the box with zero runtime overhead over raw WebKitGTK.
   - The UI connects to `ghostpathd` via a versioned API contract defined in `docs/API.md` (over WebSocket or Unix socket IPC bridge).
   - Identified UI adjustments:
     - Replace hardcoded `tun0` text and logs with `ghost0`.
