@@ -38,6 +38,7 @@ pub enum NodeProtocol {
     Trojan,
     VMess,
     Shadowsocks,
+    AmneziaWG,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -1,6 +1,7 @@
 use crate::doctor::SystemDoctor;
+use crate::tunnel::{AwgBackend, TunnelBackend};
 use anyhow::{bail, Result};
-use ghostpath_core::models::{ConnectionStatus, CoreEngine, ServerNode};
+use ghostpath_core::models::{ConnectionStatus, CoreEngine, NodeProtocol, ServerNode};
 use ghostpath_core::GhostConfig;
 use ghostpath_net::{
     DnsGuard, DnsManager, DnsProxy, KillSwitch, KillSwitchGuard, RouteGuard, RouteManager,
@@ -33,6 +34,7 @@ pub struct ActiveSession {
     pub killswitch_guard: Option<KillSwitchGuard>,
     pub tun_device: Option<TunDevice>,
     pub core_process: Option<ManagedCoreOutbound>,
+    pub awg_backend: Option<AwgBackend>,
 }
 
 pub struct DaemonEngine {
@@ -105,98 +107,188 @@ impl DaemonEngine {
 
         info!(node_id = %node.id, name = %node.name, "Establishing GhostPath VPN tunnel");
 
-        let (tun_device, route_guard, dns_guard, dns_proxy, killswitch_guard, core_process) =
+        let is_awg_protocol = node.protocol == NodeProtocol::AmneziaWG || node.protocol == NodeProtocol::WireGuard;
+        let iface_name = if is_awg_protocol { "awg-ghost0" } else { "ghost0" };
+
+        let (tun_device, route_guard, dns_guard, dns_proxy, killswitch_guard, core_process, awg_backend) =
             if !self.dry_run {
-                // 1. Open TUN device
-                let mut tun = TunDevice::new("ghost0", config.settings.mtu);
-                let tun_opt = match tun.open().await {
-                    Ok(()) => {
-                        info!("TUN interface ghost0 created and opened successfully");
-                        Some(tun)
-                    }
-                    Err(e) => {
-                        warn!("Could not open kernel TUN interface: {}", e);
+                if is_awg_protocol {
+                    // AWG tunnel pipeline
+                    let awg_profile = if let Some(ref raw_conf) = node.raw_link {
+                        if raw_conf.contains("[Interface]") {
+                            ghostpath_proto::amnezia::parse_awg_conf(raw_conf, &node.name).ok()
+                        } else {
+                            None
+                        }
+                    } else {
                         None
-                    }
-                };
+                    }.unwrap_or_else(|| {
+                        ghostpath_proto::amnezia::AwgProfileConfig {
+                            id: node.id.clone(),
+                            name: node.name.clone(),
+                            interface: ghostpath_proto::amnezia::AwgInterfaceConfig {
+                                private_key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=".to_string(),
+                                address: vec!["10.8.0.2/24".to_string()],
+                                dns: vec![config.settings.dns_primary.clone()],
+                                mtu: Some(config.settings.mtu),
+                                obfuscation: ghostpath_proto::amnezia::AwgObfuscationConfig::default(),
+                            },
+                            peer: ghostpath_proto::amnezia::AwgPeerConfig {
+                                public_key: "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=".to_string(),
+                                preshared_key: None,
+                                endpoint: format!("{}:{}", node.host, node.port),
+                                allowed_ips: vec!["0.0.0.0/0".to_string(), "::/0".to_string()],
+                                persistent_keepalive: Some(25),
+                            },
+                        }
+                    });
 
-                // 2. Setup Policy Routing & Netlink rules
-                let mut rm = RouteManager::new(self.dry_run);
-                let rg = match rm.apply_routing("ghost0", config.settings.ipv6_routing) {
-                    Ok(guard) => {
-                        info!(
-                        "Policy routing installed: fwmark 0x4750, table 5180, priority 5180/5181"
+                    let mut journal = UndoJournal::default();
+                    let mut awg = AwgBackend::new(Some(iface_name), Some(0x4750));
+                    if let Err(e) = awg.start(&awg_profile, self.dry_run, &mut journal).await {
+                        warn!("Could not start AwgBackend: {}", e);
+                    }
+
+                    let mut rm = RouteManager::new(self.dry_run);
+                    let rg = match rm.apply_routing(iface_name, config.settings.ipv6_routing) {
+                        Ok(g) => Some(g),
+                        Err(e) => {
+                            warn!("Could not apply policy routing on {iface_name}: {e}");
+                            None
+                        }
+                    };
+
+                    let mut dm = DnsManager::new(
+                        &config.settings.dns_primary,
+                        &config.settings.dns_fallback,
+                        self.dry_run,
                     );
-                        Some(guard)
-                    }
-                    Err(e) => {
-                        warn!("Could not apply policy routing: {}", e);
-                        None
-                    }
-                };
+                    let dg = dm.apply_dns(iface_name, &mut journal).ok();
 
-                // 3. Configure DNS and prevent leaks
-                let mut journal = UndoJournal::default();
-                let mut dm = DnsManager::new(
-                    &config.settings.dns_primary,
-                    &config.settings.dns_fallback,
-                    self.dry_run,
-                );
-                let dg = match dm.apply_dns("ghost0", &mut journal) {
-                    Ok(guard) => {
-                        info!("Encrypted DNS routing active on ghost0 (~. domain)");
-                        Some(guard)
-                    }
-                    Err(e) => {
-                        warn!("Could not configure DNS: {}", e);
+                    let ks = if config.settings.kill_switch {
+                        KillSwitch::enable(self.dry_run, config.settings.allow_lan, &mut journal).ok()
+                    } else {
                         None
-                    }
-                };
+                    };
 
-                // 4. Start DoH Proxy listener
-                let dp = DnsProxy::new(10853, config.settings.dns_primary.clone());
-                let dp_opt = match dp.start().await {
-                    Ok(()) => {
-                        info!("Internal encrypted DNS proxy listening on 127.0.0.1:10853");
-                        Some(dp)
-                    }
-                    Err(e) => {
-                        warn!("Could not start DNS proxy: {}", e);
-                        None
-                    }
-                };
+                    (None, rg, dg, None, ks, None, Some(awg))
+                } else {
+                    // 1. Open TUN device
+                    let mut tun = TunDevice::new("ghost0", config.settings.mtu);
+                    let tun_opt = match tun.open().await {
+                        Ok(()) => {
+                            info!("TUN interface ghost0 created and opened successfully");
+                            Some(tun)
+                        }
+                        Err(e) => {
+                            warn!("Could not open kernel TUN interface: {}", e);
+                            None
+                        }
+                    };
 
-                // 5. nftables kill switch
-                let ks = if config.settings.kill_switch {
-                    match KillSwitch::enable(self.dry_run, config.settings.allow_lan, &mut journal) {
+                    // 2. Setup Policy Routing & Netlink rules
+                    let mut rm = RouteManager::new(self.dry_run);
+                    let rg = match rm.apply_routing("ghost0", config.settings.ipv6_routing) {
                         Ok(guard) => {
-                            info!("nftables killswitch armed on inet ghostpath");
+                            info!(
+                                "Policy routing installed: fwmark 0x4750, table 5180, priority 5180/5181"
+                            );
                             Some(guard)
                         }
                         Err(e) => {
-                            warn!("Could not enable kill switch: {}", e);
+                            warn!("Could not apply policy routing: {}", e);
                             None
                         }
+                    };
+
+                    // 3. Configure DNS and prevent leaks
+                    let mut journal = UndoJournal::default();
+                    let mut dm = DnsManager::new(
+                        &config.settings.dns_primary,
+                        &config.settings.dns_fallback,
+                        self.dry_run,
+                    );
+                    let dg = match dm.apply_dns("ghost0", &mut journal) {
+                        Ok(guard) => {
+                            info!("Encrypted DNS routing active on ghost0 (~. domain)");
+                            Some(guard)
+                        }
+                        Err(e) => {
+                            warn!("Could not configure DNS: {}", e);
+                            None
+                        }
+                    };
+
+                    // 4. Start DoH Proxy listener
+                    let dp = DnsProxy::new(10853, config.settings.dns_primary.clone());
+                    let dp_opt = match dp.start().await {
+                        Ok(()) => {
+                            info!("Internal encrypted DNS proxy listening on 127.0.0.1:10853");
+                            Some(dp)
+                        }
+                        Err(e) => {
+                            warn!("Could not start DNS proxy: {}", e);
+                            None
+                        }
+                    };
+
+                    // 5. nftables kill switch
+                    let ks = if config.settings.kill_switch {
+                        match KillSwitch::enable(self.dry_run, config.settings.allow_lan, &mut journal) {
+                            Ok(guard) => {
+                                info!("nftables killswitch armed on inet ghostpath");
+                                Some(guard)
+                            }
+                            Err(e) => {
+                                warn!("Could not enable kill switch: {}", e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    // 6. Launch proxy core supervisor
+                    let mut core = ManagedCoreOutbound::new(
+                        config.settings.core_engine,
+                        config.settings.socks_port,
+                        config.settings.http_port,
+                        0x4750,
+                    );
+                    if let Err(e) = core.start(&node).await {
+                        warn!("Could not start managed proxy core: {}", e);
                     }
-                } else {
-                    None
-                };
 
-                // 6. Launch proxy core supervisor
-                let mut core = ManagedCoreOutbound::new(
-                    config.settings.core_engine,
-                    config.settings.socks_port,
-                    config.settings.http_port,
-                    0x4750,
-                );
-                if let Err(e) = core.start(&node).await {
-                    warn!("Could not start managed proxy core: {}", e);
+                    (tun_opt, rg, dg, dp_opt, ks, Some(core), None)
                 }
-
-                (tun_opt, rg, dg, dp_opt, ks, Some(core))
             } else {
                 info!("Dry-run mode: simulating tunnel setup");
-                (None, None, None, None, None, None)
+                if is_awg_protocol {
+                    let mut journal = UndoJournal::default();
+                    let mut awg = AwgBackend::new(Some(iface_name), Some(0x4750));
+                    let profile = ghostpath_proto::amnezia::AwgProfileConfig {
+                        id: node.id.clone(),
+                        name: node.name.clone(),
+                        interface: ghostpath_proto::amnezia::AwgInterfaceConfig {
+                            private_key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=".to_string(),
+                            address: vec!["10.8.0.2/24".to_string()],
+                            dns: vec![config.settings.dns_primary.clone()],
+                            mtu: Some(config.settings.mtu),
+                            obfuscation: ghostpath_proto::amnezia::AwgObfuscationConfig::default(),
+                        },
+                        peer: ghostpath_proto::amnezia::AwgPeerConfig {
+                            public_key: "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=".to_string(),
+                            preshared_key: None,
+                            endpoint: format!("{}:{}", node.host, node.port),
+                            allowed_ips: vec!["0.0.0.0/0".to_string()],
+                            persistent_keepalive: Some(25),
+                        },
+                    };
+                    let _ = awg.start(&profile, true, &mut journal).await;
+                    (None, None, None, None, None, None, Some(awg))
+                } else {
+                    (None, None, None, None, None, None, None)
+                }
             };
 
         let session = ActiveSession {
@@ -208,6 +300,7 @@ impl DaemonEngine {
             killswitch_guard,
             tun_device,
             core_process,
+            awg_backend,
         };
 
         *self.session.write().await = Some(session);
@@ -219,7 +312,7 @@ impl DaemonEngine {
             "status": "connected",
             "nodeId": node.id,
             "nodeName": node.name,
-            "interface": "ghost0",
+            "interface": iface_name,
         }))
     }
 
@@ -235,6 +328,12 @@ impl DaemonEngine {
 
         let mut session_lock = self.session.write().await;
         if let Some(mut session) = session_lock.take() {
+            if let Some(mut awg) = session.awg_backend.take() {
+                let mut journal = UndoJournal::default();
+                if let Err(e) = awg.stop(self.dry_run, &mut journal).await {
+                    warn!("Error stopping AwgBackend: {}", e);
+                }
+            }
             if let Some(mut core) = session.core_process.take() {
                 if let Err(e) = core.stop().await {
                     warn!("Error stopping proxy core: {}", e);
@@ -332,6 +431,166 @@ impl DaemonEngine {
         raw: &str,
         name: Option<String>,
     ) -> Result<serde_json::Value> {
+        let trimmed = raw.trim();
+
+        // 1. Amnezia vpn:// URI
+        if trimmed.to_lowercase().starts_with("vpn://") {
+            let server = ghostpath_proto::amnezia::parse_vpn_uri(trimmed)?;
+            let mut imported_nodes = Vec::new();
+            let mut unsupported = Vec::new();
+
+            for container in server.containers {
+                if container.is_supported {
+                    if let Some(awg_prof) = container.awg_profile {
+                        let is_awg = awg_prof.is_amnezia();
+                        let (host, port) = awg_prof
+                            .peer
+                            .endpoint
+                            .split_once(':')
+                            .map(|(h, p)| (h.to_string(), p.parse::<u16>().unwrap_or(39001)))
+                            .unwrap_or_else(|| (awg_prof.peer.endpoint.clone(), 39001));
+
+                        let node = ServerNode {
+                            id: awg_prof.id.clone(),
+                            name: if let Some(ref n) = name {
+                                format!("{n} ({})", container.container_name)
+                            } else {
+                                awg_prof.name.clone()
+                            },
+                            country_code: "UN".to_string(),
+                            city: "Tunnel".to_string(),
+                            country: "Amnezia".to_string(),
+                            protocol: if is_awg {
+                                NodeProtocol::AmneziaWG
+                            } else {
+                                NodeProtocol::WireGuard
+                            },
+                            transport: if is_awg {
+                                "obfuscated-udp".to_string()
+                            } else {
+                                "udp".to_string()
+                            },
+                            security: if is_awg {
+                                "AmneziaWG Obfuscated".to_string()
+                            } else {
+                                "WireGuard".to_string()
+                            },
+                            host,
+                            port,
+                            latency_ms: None,
+                            pinging: None,
+                            load_percent: 0,
+                            subscription_id: None,
+                            raw_link: Some(ghostpath_proto::amnezia::export_awg_conf(&awg_prof)),
+                        };
+                        imported_nodes.push(node);
+                    }
+                } else {
+                    unsupported.push(serde_json::json!({
+                        "container": container.container_name,
+                        "reason": container
+                            .unsupported_reason
+                            .unwrap_or_else(|| "Unsupported protocol".to_string()),
+                    }));
+                }
+            }
+
+            if imported_nodes.is_empty() && !unsupported.is_empty() {
+                bail!(
+                    "The provided Amnezia key contains no supported containers. Unsupported: {:?}",
+                    unsupported
+                );
+            }
+
+            let mut config = self.config.write().await;
+            for n in &imported_nodes {
+                config.nodes.push(n.clone());
+            }
+            if config.active_node_id.is_none() && !imported_nodes.is_empty() {
+                config.active_node_id = Some(imported_nodes[0].id.clone());
+            }
+            let _ = config.save();
+
+            self.append_log(format!(
+                "Imported {} profile(s) from Amnezia server: {}",
+                imported_nodes.len(),
+                server.server_name
+            ))
+            .await;
+
+            return Ok(serde_json::json!({
+                "type": "amnezia_multi",
+                "importedCount": imported_nodes.len(),
+                "nodes": imported_nodes,
+                "unsupportedContainers": unsupported,
+            }));
+        }
+
+        // 2. AmneziaWG or WireGuard INI config (.conf)
+        if trimmed.contains("[Interface]") && trimmed.contains("[Peer]") {
+            let prof_name = name.unwrap_or_else(|| "AmneziaWG Profile".to_string());
+            let awg_prof = ghostpath_proto::amnezia::parse_awg_conf(trimmed, &prof_name)?;
+            let is_awg = awg_prof.is_amnezia();
+            let (host, port) = awg_prof
+                .peer
+                .endpoint
+                .split_once(':')
+                .map(|(h, p)| (h.to_string(), p.parse::<u16>().unwrap_or(39001)))
+                .unwrap_or_else(|| (awg_prof.peer.endpoint.clone(), 39001));
+
+            let node = ServerNode {
+                id: awg_prof.id.clone(),
+                name: awg_prof.name.clone(),
+                country_code: "UN".to_string(),
+                city: "Tunnel".to_string(),
+                country: "Amnezia".to_string(),
+                protocol: if is_awg {
+                    NodeProtocol::AmneziaWG
+                } else {
+                    NodeProtocol::WireGuard
+                },
+                transport: if is_awg {
+                    "obfuscated-udp".to_string()
+                } else {
+                    "udp".to_string()
+                },
+                security: if is_awg {
+                    "AmneziaWG Obfuscated".to_string()
+                } else {
+                    "WireGuard".to_string()
+                },
+                host,
+                port,
+                latency_ms: None,
+                pinging: None,
+                load_percent: 0,
+                subscription_id: None,
+                raw_link: Some(trimmed.to_string()),
+            };
+
+            let mut config = self.config.write().await;
+            config.nodes.push(node.clone());
+            if config.active_node_id.is_none() {
+                config.active_node_id = Some(node.id.clone());
+            }
+            let _ = config.save();
+
+            self.append_log(format!("Imported profile: {}", node.name))
+                .await;
+
+            return Ok(serde_json::json!({
+                "type": "single_node",
+                "node": {
+                    "id": node.id,
+                    "name": node.name,
+                    "protocol": format!("{:?}", node.protocol),
+                    "host": node.host,
+                    "port": node.port,
+                }
+            }));
+        }
+
+        // 3. Standard V2Ray URI link
         let mut node = parse_any_link(raw)?;
         if let Some(n) = name {
             node.name = n;
