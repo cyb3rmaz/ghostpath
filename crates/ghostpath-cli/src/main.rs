@@ -35,7 +35,9 @@ enum Commands {
     Disconnect,
     /// Display connection status and traffic stats
     Status,
-    /// Import a server profile link (vless://, vmess://, etc.) or subscription URL
+    /// List all imported VPN profiles
+    Profiles,
+    /// Import a server profile link (vless://, vmess://, vpn://, etc.) or config file
     Import {
         /// URL, link or configuration string
         target: String,
@@ -195,10 +197,61 @@ async fn main() -> Result<()> {
                 }
                 std::process::exit(1);
             }
+        }
+        Commands::Profiles => match client.call("listNodes", serde_json::json!({})).await {
+            Ok(res) => {
+                if cli.json {
+                    println!("{}", serde_json::to_string_pretty(&res)?);
+                } else if let Some(nodes) = res.as_array() {
+                    if nodes.is_empty() {
+                        println!("No profiles found. Import one using 'ghostpath import <link | file>'.");
+                    } else {
+                        println!("{}", "Imported VPN Profiles:".bold());
+                        for node in nodes {
+                            let id = node.get("id").and_then(|v| v.as_str()).unwrap_or("-");
+                            let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("-");
+                            let proto = node.get("protocol").and_then(|v| v.as_str()).unwrap_or("-");
+                            let endpoint = format!(
+                                "{}:{}",
+                                node.get("host").and_then(|v| v.as_str()).unwrap_or("-"),
+                                node.get("port").and_then(|v| v.as_u64()).unwrap_or(0)
+                            );
+                            println!(
+                                "  • [{}] {} ({}) - {}",
+                                proto.yellow().bold(),
+                                name.cyan(),
+                                endpoint,
+                                id.dimmed()
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{} Failed to list profiles: {}", "ERR".bright_red().bold(), e);
+                std::process::exit(1);
+            }
         },
         Commands::Import { target, name } => {
+            let content = if std::path::Path::new(&target).is_file() {
+                match std::fs::read_to_string(&target) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to read file '{}': {}",
+                            "ERR".bright_red().bold(),
+                            target,
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                target.clone()
+            };
+
             let params = serde_json::json!({
-                "raw": target,
+                "raw": content,
                 "name": name,
             });
 
@@ -206,6 +259,25 @@ async fn main() -> Result<()> {
                 Ok(res) => {
                     if cli.json {
                         println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else if res.get("type").and_then(|v| v.as_str()) == Some("amnezia_multi") {
+                        let count = res.get("importedCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                        println!(
+                            "{} Imported {} Amnezia profile(s) successfully.",
+                            "OK".bright_green().bold(),
+                            count
+                        );
+                        if let Some(unsupported) = res.get("unsupportedContainers").and_then(|v| v.as_array()) {
+                            for item in unsupported {
+                                let c_name = item.get("container").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("unsupported");
+                                println!(
+                                    "  {} Skipped unsupported container '{}': {}",
+                                    "WARN".bright_yellow().bold(),
+                                    c_name.cyan(),
+                                    reason
+                                );
+                            }
+                        }
                     } else {
                         let node_name = res
                             .get("node")

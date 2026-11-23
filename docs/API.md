@@ -1,6 +1,6 @@
 # GhostPath Daemon IPC & UI API Contract (API.md)
 
-- **Version:** `1.0.0`
+- **Version:** `1.1.0`
 - **Protocol:** JSON-RPC 2.0 over Unix Domain Socket (`/run/ghostpath/ghostpathd.sock`) or Local WebSocket Bridge (`127.0.0.1:<port>`).
 - **Authentication:**
   - Local Unix Socket: Kernel-enforced `SO_PEERCRED` (UID/GID verification).
@@ -107,23 +107,47 @@ Retrieves current connection status, active node, and session metrics.
 ### 2.2 Profile & Subscription Management
 
 #### `importProfile`
-Imports a raw URI (`vless://`, `vmess://`, `trojan://`, `ss://`) or subscription URL.
+Imports a raw URI (`vless://`, `vmess://`, `trojan://`, `ss://`, `vpn://`) or configuration text (`.conf`).
 - **Parameters:**
   ```json
   {
-    "raw": "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@195.181.162.88:443?security=reality...",
+    "raw": "vpn://... or [Interface]... or vless://...",
     "name": "Optional Friendly Name"
   }
   ```
-- **Returns:**
+- **Returns (Single Node / Conf Import):**
   ```json
   {
-    "type": "single_node", // or "subscription"
+    "type": "single_node",
     "node": {
       "id": "node-1",
       "name": "Stockholm SE-01",
-      "protocol": "VLESS"
+      "protocol": "AmneziaWG",
+      "host": "203.0.113.10",
+      "port": 39001
     }
+  }
+  ```
+- **Returns (Amnezia Multi-Container Import):**
+  ```json
+  {
+    "type": "amnezia_multi",
+    "importedCount": 1,
+    "nodes": [
+      {
+        "id": "awg-1",
+        "name": "Amnezia Server (amnezia-awg)",
+        "protocol": "AmneziaWG",
+        "host": "203.0.113.10",
+        "port": 39001
+      }
+    ],
+    "unsupportedContainers": [
+      {
+        "container": "amnezia-openvpn-cloak",
+        "reason": "OpenVPN over Cloak is not supported in GhostPath. Use AmneziaWG or VLESS Reality instead."
+      }
+    ]
   }
   ```
 

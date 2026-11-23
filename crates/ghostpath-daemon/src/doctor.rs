@@ -30,6 +30,7 @@ impl SystemDoctor {
             Self::check_dns_resolver(),
             Self::check_docker(),
             Self::check_ipv6(),
+            Self::check_amneziawg_engine(),
             Self::check_conflicting_vpn_interfaces(),
         ];
 
@@ -232,10 +233,12 @@ impl SystemDoctor {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if (name.starts_with("wg")
+                    || name.starts_with("awg")
                     || name.starts_with("tailscale")
                     || name.starts_with("tun")
                     || name.starts_with("tap"))
                     && name != "ghost0"
+                    && name != "awg-ghost0"
                 {
                     conflicts.push(name);
                 }
@@ -258,6 +261,32 @@ impl SystemDoctor {
                 "No conflicting VPN tunnels detected".to_string()
             },
             fix: None,
+        }
+    }
+
+    fn check_amneziawg_engine() -> DoctorCheck {
+        let has_kernel_mod = Path::new("/sys/module/amneziawg").exists();
+        let binary_path = crate::tunnel::AwgBackend::find_binary();
+
+        let passed = has_kernel_mod || binary_path.is_some();
+
+        DoctorCheck {
+            id: "amneziawg_engine".to_string(),
+            name: "AmneziaWG Userspace & Kernel Runtime".to_string(),
+            passed,
+            severity: "warning".to_string(),
+            details: if has_kernel_mod {
+                "AmneziaWG out-of-tree kernel module (amneziawg.ko) is loaded".to_string()
+            } else if let Some(bin) = binary_path {
+                format!("AmneziaWG userspace engine found at {}", bin.display())
+            } else {
+                "Neither amneziawg-go binary nor amneziawg kernel module was detected. AmneziaWG profiles will be unavailable until installed.".to_string()
+            },
+            fix: if !passed {
+                Some("Install ghostpath-vpn package with bundled amneziawg-go, or place amneziawg-go into /usr/bin/amneziawg-go".to_string())
+            } else {
+                None
+            },
         }
     }
 
@@ -291,5 +320,6 @@ mod tests {
         assert!(report.checks.iter().any(|c| c.id == "dns"));
         assert!(report.checks.iter().any(|c| c.id == "docker"));
         assert!(report.checks.iter().any(|c| c.id == "ipv6"));
+        assert!(report.checks.iter().any(|c| c.id == "amneziawg_engine"));
     }
 }
