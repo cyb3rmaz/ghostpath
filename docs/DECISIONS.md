@@ -145,3 +145,27 @@ This document records the architectural, network, and security decisions for **G
     - **Fedora / RHEL:** `.rpm` package via RPM spec.
     - **Arch Linux:** `PKGBUILD` for AUR.
     - **AppImage:** Standalone portable GUI executable with built-in first-run diagnostics that detects missing host daemon and provides copyable one-line installation commands.
+
+---
+
+## 9. AmneziaVPN & AmneziaWG Protocol Support and Runtime Strategy
+
+- **Date:** 2026-11-24
+- **Status:** Approved
+- **Context:**
+  Users need the ability to import and connect with AmneziaVPN configurations (especially AmneziaWG for censorship-resistant tunneling) inside GhostPath with full TUN mode, policy routing, DNS protection, kill switch, and multi-VPN coexistence.
+- **Specifications & Verified Standards:**
+  - **`vpn://` URI & `.vpn` Files:** Encoded with Base64URL wrapping Qt's `qCompress` format (4-byte big-endian uncompressed length followed by a zlib compressed JSON stream). Bounded to 2 MB maximum uncompressed size to prevent zip-bomb attacks.
+  - **AmneziaWG Obfuscation Fields:**
+    - v1.0: `Jc` (junk count), `Jmin`/`Jmax` (junk byte sizes), `S1`/`S2` (handshake init/response padding), `H1`–`H4` (message type header overrides).
+    - v2.0+: `S3`/`S4` (cookie/transport padding), `I1`–`I5` (custom signature packets).
+    - WireGuard fallback: Plain WireGuard configs are supported under the same parser with obfuscation fields zeroed/omitted.
+- **Runtime Engine Evaluation:**
+  - *Option A: Userspace `amneziawg-go`.* Portable across 100% of Linux distributions, MIT licensed, requires zero kernel compilation or DKMS, runs with `CAP_NET_ADMIN` on `/dev/net/tun`, controlled via standard WireGuard UAPI.
+  - *Option B: Out-of-tree kernel module `amneziawg-linux-kernel-module`.* High throughput, but GPLv2, requires kernel headers, breaks on kernel updates, and fails on Secure Boot systems without custom machine owner keys (MOK).
+  - *Option C: Native Rust implementation.* No production crates exist for AmneziaWG packet obfuscation algorithms.
+- **Decision:**
+  - Adopt **Option A (`amneziawg-go`)** as the primary default runtime engine, bundled directly inside GhostPath packages (`.deb`, `.rpm`, `AppImage`, `PKGBUILD`).
+  - Introduce `TunnelBackend` trait in `ghostpath-daemon`/`ghostpath-proto` alongside the proxy `Outbound` trait to natively manage L3 WireGuard/AmneziaWG interfaces.
+  - Apply socket fwmark `0x4750` on `amneziawg-go`'s UDP outbound socket to route via physical `table main` while routing system traffic into `table 5180`.
+  - In `vpn://` multi-container payloads: import all supported containers (`amnezia-awg`, `amnezia-wireguard`, `amnezia-xray`, `amnezia-shadowsocks`), and report clear, honest feedback for unsupported containers (`amnezia-openvpn-cloak`, `amnezia-openvpn`, `amnezia-ipsec`).
