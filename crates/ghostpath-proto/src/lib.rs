@@ -1,3 +1,4 @@
+pub mod amnezia;
 pub mod config_gen;
 pub mod outbound;
 pub mod parser;
