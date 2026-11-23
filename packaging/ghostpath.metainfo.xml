@@ -34,12 +34,6 @@
   <developer id="com.ghostpath.vpn">
     <name>GhostPath Team</name>
   </developer>
-  <screenshots>
-    <screenshot type="default">
-      <caption>GhostPath VPN Dashboard with real-time bandwidth metrics</caption>
-      <image>https://raw.githubusercontent.com/cybermaz/ghost_path/master/docs/assets/dashboard.png</image>
-    </screenshot>
-  </screenshots>
   <content_rating type="oars-1.1" />
   <releases>
     <release version="0.1.0" date="2026-11-23">
