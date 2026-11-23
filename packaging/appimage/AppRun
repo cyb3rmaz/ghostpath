@@ -6,14 +6,10 @@ export APPDIR="${HERE}"
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
 
-# If called as CLI tool
+# If called explicitly as CLI tool
 if [ "$(basename "$0")" = "ghostpath" ]; then
     exec "${HERE}/usr/bin/ghostpath" "$@"
 fi
 
-# Default launch GUI application
-if [ -x "${HERE}/usr/bin/ghostpath-gui" ]; then
-    exec "${HERE}/usr/bin/ghostpath-gui" "$@"
-else
-    exec "${HERE}/usr/bin/ghostpath" "$@"
-fi
+# Launch desktop GUI application
+exec "${HERE}/usr/bin/ghostpath-gui" "$@"

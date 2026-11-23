@@ -2,37 +2,46 @@
 pkgname=ghostpath-vpn
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="GhostPath VPN - Linux VPN client with reliable TUN mode"
+pkgdesc="GhostPath VPN - Native Linux desktop VPN client with reliable TUN mode"
 arch=('x86_64' 'aarch64')
 url="https://github.com/cybermaz/ghost_path"
 license=('MIT' 'Apache-2.0')
-depends=('iproute2' 'iptables' 'systemd')
-makedepends=('cargo' 'rust>=1.75' 'pkgconf' 'openssl')
+depends=('iproute2' 'iptables' 'systemd' 'webkit2gtk-4.1' 'libappindicator-gtk3')
+makedepends=('cargo' 'rust>=1.75' 'pkgconf' 'openssl' 'nodejs' 'npm')
 backup=('etc/ghostpath/config.toml')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 prepare() {
-    cd "$pkgname-$pkgver"
-    cargo fetch --locked --target "$CARCH-unknown-linux-gnu"
+    cd "$pkgname-$pkgver/UI"
+    npm install --legacy-peer-deps
+    npm run build
 }
 
 build() {
     cd "$pkgname-$pkgver"
     export RUSTUP_TOOLCHAIN=stable
     export CARGO_TARGET_DIR=target
-    cargo build --frozen --release --workspace
+    cargo build --release --workspace
 }
 
 check() {
     cd "$pkgname-$pkgver"
-    cargo test --frozen --workspace
+    cargo test --release --workspace
 }
 
 package() {
     cd "$pkgname-$pkgver"
     install -Dm755 target/release/ghostpath "$pkgdir/usr/bin/ghostpath"
     install -Dm755 target/release/ghostpathd "$pkgdir/usr/bin/ghostpathd"
+    install -Dm755 target/release/ghostpath-gui "$pkgdir/usr/bin/ghostpath-gui"
+
     install -Dm644 systemd/ghostpathd.service "$pkgdir/usr/lib/systemd/system/ghostpathd.service"
     install -Dm644 packaging/ghostpath.desktop "$pkgdir/usr/share/applications/ghostpath.desktop"
+    install -Dm644 packaging/ghostpath.metainfo.xml "$pkgdir/usr/share/metainfo/com.ghostpath.vpn.metainfo.xml"
+
+    for size in 16 24 32 48 64 128 256 512; do
+        install -Dm644 packaging/icons/${size}x${size}.png "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/ghostpath.png"
+    done
+    install -Dm644 packaging/ghostpath.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/ghostpath.svg"
 }

@@ -3,49 +3,56 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+DIST_DIR="${ROOT_DIR}/dist"
 BUILD_DIR="${ROOT_DIR}/target/appimage"
 APP_DIR="${BUILD_DIR}/GhostPath.AppDir"
 OUTPUT_NAME="GhostPath-VPN-x86_64.AppImage"
 
 echo "=== Building GhostPath VPN AppImage ==="
 
+mkdir -p "${DIST_DIR}"
 cd "${ROOT_DIR}"
-cargo build --release -p ghostpath-cli -p ghostpath-daemon
+
+# Build all workspace release binaries
+cargo build --release --workspace
 
 rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/usr/bin"
 mkdir -p "${APP_DIR}/usr/share/applications"
-mkdir -p "${APP_DIR}/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "${APP_DIR}/usr/share/metainfo"
 
 # Copy binaries
 cp target/release/ghostpath "${APP_DIR}/usr/bin/"
 cp target/release/ghostpathd "${APP_DIR}/usr/bin/"
+cp target/release/ghostpath-gui "${APP_DIR}/usr/bin/"
 
-# Copy desktop and icon assets
+# Copy desktop and AppStream metadata
 cp packaging/ghostpath.desktop "${APP_DIR}/"
 cp packaging/ghostpath.desktop "${APP_DIR}/usr/share/applications/"
+cp packaging/ghostpath.metainfo.xml "${APP_DIR}/usr/share/metainfo/"
 cp packaging/appimage/AppRun "${APP_DIR}/"
 chmod +x "${APP_DIR}/AppRun"
 
-# Create fallback SVG icon if PNG icon not present
-cat << 'EOF' > "${APP_DIR}/ghostpath.svg"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <circle cx="50" cy="50" r="45" fill="#0ea5e9"/>
-  <path d="M50 20 C35 20 25 32 25 48 C25 68 35 75 35 75 L42 68 L50 75 L58 68 L65 75 C65 75 75 68 75 48 C75 32 65 20 50 20 Z" fill="#ffffff"/>
-  <circle cx="42" cy="42" r="5" fill="#0ea5e9"/>
-  <circle cx="58" cy="42" r="5" fill="#0ea5e9"/>
-</svg>
-EOF
-cp "${APP_DIR}/ghostpath.svg" "${APP_DIR}/usr/share/icons/hicolor/256x256/apps/ghostpath.svg"
+# Install icons in all resolutions
+for size in 16 24 32 48 64 128 256 512; do
+    mkdir -p "${APP_DIR}/usr/share/icons/hicolor/${size}x${size}/apps"
+    cp "packaging/icons/${size}x${size}.png" "${APP_DIR}/usr/share/icons/hicolor/${size}x${size}/apps/ghostpath.png"
+done
+
+mkdir -p "${APP_DIR}/usr/share/icons/hicolor/scalable/apps"
+cp packaging/ghostpath.svg "${APP_DIR}/usr/share/icons/hicolor/scalable/apps/ghostpath.svg"
+cp packaging/ghostpath.svg "${APP_DIR}/ghostpath.svg"
+cp packaging/icons/256x256.png "${APP_DIR}/ghostpath.png"
 
 echo "AppDir populated successfully at ${APP_DIR}."
 
 # Check if appimagetool exists
 if command -v appimagetool >/dev/null 2>&1; then
     echo "Running appimagetool..."
-    appimagetool "${APP_DIR}" "${BUILD_DIR}/${OUTPUT_NAME}"
-    echo "Generated: ${BUILD_DIR}/${OUTPUT_NAME}"
-else
-    echo "Note: 'appimagetool' not found in PATH. AppDir structure is prepared at ${APP_DIR}."
-    echo "To produce the .AppImage, download appimagetool and run: appimagetool ${APP_DIR} ${OUTPUT_NAME}"
+    ARCH=x86_64 appimagetool --no-appstream "${APP_DIR}" "${DIST_DIR}/${OUTPUT_NAME}" || ARCH=x86_64 appimagetool "${APP_DIR}" "${DIST_DIR}/${OUTPUT_NAME}"
+    echo "Generated: ${DIST_DIR}/${OUTPUT_NAME}"
 fi
+
+echo "Creating standalone AppDir bundle tarball..."
+tar -czf "${DIST_DIR}/GhostPath-VPN-x86_64.AppDir.tar.gz" -C "${BUILD_DIR}" GhostPath.AppDir
+echo "Generated AppDir archive: ${DIST_DIR}/GhostPath-VPN-x86_64.AppDir.tar.gz"

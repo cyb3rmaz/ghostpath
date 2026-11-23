@@ -10,12 +10,16 @@ Source0:        %{name}-%{version}.tar.gz
 BuildRequires:  rust >= 1.75
 BuildRequires:  cargo
 BuildRequires:  openssl-devel
+BuildRequires:  webkit2gtk4.1-devel
+BuildRequires:  libappindicator-gtk3-devel
 BuildRequires:  pkgconfig
 BuildRequires:  systemd-rpm-macros
 
 Requires:       iproute
 Requires:       iptables
 Requires:       systemd
+Requires:       webkit2gtk4.1
+Requires:       libappindicator-gtk3
 
 %description
 GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode
@@ -33,12 +37,24 @@ rm -rf $RPM_BUILD_ROOT
 install -d -m 0755 %{buildroot}%{_bindir}
 install -m 0755 target/release/ghostpath %{buildroot}%{_bindir}/ghostpath
 install -m 0755 target/release/ghostpathd %{buildroot}%{_bindir}/ghostpathd
+install -m 0755 target/release/ghostpath-gui %{buildroot}%{_bindir}/ghostpath-gui
 
 install -d -m 0755 %{buildroot}%{_unitdir}
 install -m 0644 systemd/ghostpathd.service %{buildroot}%{_unitdir}/ghostpathd.service
 
 install -d -m 0755 %{buildroot}%{_datadir}/applications
 install -m 0644 packaging/ghostpath.desktop %{buildroot}%{_datadir}/applications/ghostpath.desktop
+
+install -d -m 0755 %{buildroot}%{_datadir}/metainfo
+install -m 0644 packaging/ghostpath.metainfo.xml %{buildroot}%{_datadir}/metainfo/com.ghostpath.vpn.metainfo.xml
+
+for size in 16 24 32 48 64 128 256 512; do
+    install -d -m 0755 %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps
+    install -m 0644 packaging/icons/${size}x${size}.png %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/ghostpath.png
+done
+
+install -d -m 0755 %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
+install -m 0644 packaging/ghostpath.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/ghostpath.svg
 
 %pre
 getent group ghostpath >/dev/null || groupadd -r ghostpath
@@ -58,9 +74,13 @@ fi
 %files
 %{_bindir}/ghostpath
 %{_bindir}/ghostpathd
+%{_bindir}/ghostpath-gui
 %{_unitdir}/ghostpathd.service
 %{_datadir}/applications/ghostpath.desktop
+%{_datadir}/metainfo/com.ghostpath.vpn.metainfo.xml
+%{_datadir}/icons/hicolor/*/apps/ghostpath.png
+%{_datadir}/icons/hicolor/scalable/apps/ghostpath.svg
 
 %changelog
 * Sun Nov 23 2026 GhostPath Team <dev@ghostpath.vpn> - 0.1.0-1
-- Initial release of GhostPath VPN with policy routing and DNS leak prevention
+- Initial release of GhostPath VPN desktop application with Tauri 2

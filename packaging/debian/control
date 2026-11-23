@@ -2,13 +2,13 @@ Source: ghostpath-vpn
 Section: net
 Priority: optional
 Maintainer: GhostPath Team <dev@ghostpath.vpn>
-Build-Depends: debhelper-compat (= 13), cargo, rustc (>= 1.75), libssl-dev, pkg-config
+Build-Depends: debhelper-compat (= 13), cargo, rustc (>= 1.75), libssl-dev, libwebkit2gtk-4.1-dev, libappindicator3-dev, librsvg2-dev, pkg-config
 Standards-Version: 4.6.2
 Homepage: https://github.com/cybermaz/ghost_path
 
 Package: ghostpath-vpn
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, iproute2, iptables | nftables, systemd
+Depends: ${shlibs:Depends}, ${misc:Depends}, iproute2, iptables | nftables, systemd, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libappindicator3-1
 Recommends: systemd-resolved
 Description: GhostPath VPN - Native Linux VPN client with reliable TUN mode
  GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode

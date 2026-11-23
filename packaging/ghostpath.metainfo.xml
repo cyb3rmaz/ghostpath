@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.ghostpath.vpn</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <name>GhostPath VPN</name>
+  <summary>Native censorship-resistant Linux VPN client with reliable TUN mode</summary>
+  <description>
+    <p>
+      GhostPath VPN is a high-performance Linux desktop VPN application designed to withstand
+      adversarial network filtering and Deep Packet Inspection (DPI).
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Full Linux TUN capturing (ghost0) with split tunneling and dedicated routing table priority</li>
+      <li>Support for VLESS with Reality &amp; Vision, VMess, Trojan, and Shadowsocks</li>
+      <li>System tray integration with quick connect and auto-start capability</li>
+      <li>Zero DNS leaks with systemd-resolved and encrypted DoH fallback</li>
+      <li>Coexistence with WireGuard, OpenVPN, Tailscale, and Docker networks</li>
+      <li>Direct URI scheme support (vless://, vmess://, trojan://, ss://)</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">ghostpath.desktop</launchable>
+  <url type="homepage">https://github.com/cybermaz/ghost_path</url>
+  <url type="bugtracker">https://github.com/cybermaz/ghost_path/issues</url>
+  <provides>
+    <binary>ghostpath-gui</binary>
+    <binary>ghostpath</binary>
+    <mediatype>x-scheme-handler/vless</mediatype>
+    <mediatype>x-scheme-handler/vmess</mediatype>
+    <mediatype>x-scheme-handler/trojan</mediatype>
+    <mediatype>x-scheme-handler/ss</mediatype>
+  </provides>
+  <developer id="com.ghostpath.vpn">
+    <name>GhostPath Team</name>
+  </developer>
+  <screenshots>
+    <screenshot type="default">
+      <caption>GhostPath VPN Dashboard with real-time bandwidth metrics</caption>
+      <image>https://raw.githubusercontent.com/cybermaz/ghost_path/master/docs/assets/dashboard.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-11-23">
+      <description>
+        <p>Initial release of GhostPath native desktop Linux application with Tauri 2.</p>
+      </description>
+    </release>
+  </releases>
+</component>
