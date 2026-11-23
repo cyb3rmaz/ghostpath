@@ -153,6 +153,44 @@ This comprehensive audit inspected the entire GhostPath VPN repository across th
 
 ## 5. Review & Confirmation Request
 
-Per `.agents/rules/superpowers.md`, no code deletions or modifications will occur until this audit has been reviewed and approved.
+Per `.agents/rules/superpowers.md`, no code deletions or modifications occurred until this audit was reviewed and approved.
+The user formally reviewed and approved execution.
 
-Please review the audit table above and confirm if you approve proceeding with **Step 2: Clean up**.
+---
+
+## 6. Execution & Verification Log
+
+All 38 classified audit items have been executed and verified in small, focused commits:
+
+1. **Commit `3b9f493` - Area 1: Assets & Scaffolding Cleanup:**
+   - Deleted unused npm dependencies (`@google/genai`, `express`, `@types/express`, `dotenv`, `motion`, `tsx`).
+   - Renamed package to `"ghostpath-ui"` v0.1.0 in `UI/package.json`.
+   - Purged AI Studio debris: `UI/.env.example`, `UI/metadata.json`, `UI/README.md`.
+   - Cleaned `UI/vite.config.ts` and removed non-existent remote screenshot in `packaging/ghostpath.metainfo.xml`.
+
+2. **Commit `6c11592` - Area 2: Daemon & Core Real Data Wiring:**
+   - Deleted `crates/ghostpath-daemon/src/mock.rs` and removed `--mock` and `--port` CLI options.
+   - Removed fake fallback server node in `engine.rs`; connect with no profiles returns clear error.
+   - Implemented real differential bandwidth rate tracking based on atomic network counters.
+   - Implemented real IPC methods: `ping_node`, `ping_all`, `list_subscriptions`, `import_subscription`, `delete_subscription`, `refresh_subscription`, `list_rules`, `add_rule`, `delete_rule`, `toggle_rule`.
+   - Verified with 8 passing unit tests in `ghostpath-daemon`.
+
+3. **Commit `c27eebb` - Area 3: GUI Mock Isolation:**
+   - Added `dev-mock = []` Cargo feature to `ghostpath-gui`.
+   - Gated `MockDaemon` strictly behind `#[cfg(any(test, feature = "dev-mock"))]`.
+   - In production builds, offline daemon returns clear error: `"GhostPath daemon is not running. Please start the ghostpathd service."` with zero silent mock fallback.
+   - Verified that `strings target/release/deps/libghostpath_gui-*.rlib | grep MockDaemon` returns zero matches.
+
+4. **Commit `78abbd1` - Area 4: UI Honest Empty States & Real Data Wiring:**
+   - Emptied `INITIAL_SUBSCRIPTIONS = []`, `INITIAL_NODES = []`, `INITIAL_RULES = []`, `INITIAL_LOGS = []` in `UI/src/data/vpnData.ts`.
+   - Set honest zero-state defaults in `App.tsx`: `status: 'disconnected'`, speeds `0.0`, session duration `0`.
+   - Purged fake `setInterval` random throughput generator loop.
+   - Purged `emulateOfflineFallback` from `UI/src/services/api.ts`.
+   - Replaced "Paste Sample" buttons in `AddProfileModal.tsx` with functional "Paste from Clipboard".
+   - Connected all UI views to real daemon IPC calls.
+   - Added null-safe guards for active node display.
+
+5. **Area 5: Verification Scanner & CI Integration:**
+   - Created `scripts/verify_no_demo_content.sh` scanning `UI/src`, `UI/dist`, and compiled release libraries.
+   - Added verification scanner as an enforcement step in `.github/workflows/desktop_ci.yml`.
+   - Updated `docs/BACKLOG.md` with deferred enhancements.

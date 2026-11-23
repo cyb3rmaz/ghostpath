@@ -68,6 +68,11 @@ jobs:
           cargo test -p ghostpath-gui --test security_tests
           cargo test -p ghostpath-gui --test gui_e2e_tests
 
+      - name: Verify Zero Demo Content in Release Artifacts
+        run: |
+          chmod +x scripts/verify_no_demo_content.sh
+          ./scripts/verify_no_demo_content.sh
+
       - name: Install appimagetool
         run: |
           sudo curl -sL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o /usr/local/bin/appimagetool

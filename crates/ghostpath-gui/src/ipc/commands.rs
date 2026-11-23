@@ -15,6 +15,7 @@ pub struct AppState {
     pub force_mock: bool,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for AppState {
     fn default() -> Self {
         #[cfg(any(test, feature = "dev-mock"))]
