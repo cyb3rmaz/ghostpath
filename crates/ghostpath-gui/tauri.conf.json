@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'none';"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none';"
     }
   },
   "bundle": {
@@ -38,5 +38,12 @@
     "category": "Network",
     "shortDescription": "Censorship-resistant Linux VPN client",
     "longDescription": "GhostPath VPN client for Linux featuring VLESS/VMess/Trojan, TUN routing, system tray integration, and deep linking."
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["vless", "vmess", "trojan", "ss"]
+      }
+    }
   }
 }
