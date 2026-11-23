@@ -28,6 +28,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
   const [query, setQuery] = useState('');
   const [leakChecking, setLeakChecking] = useState(false);
   const [leakCheckedAt, setLeakCheckedAt] = useState<string>('Not run yet');
+  const [doctorChecks, setDoctorChecks] = useState<Array<{ id: string; name: string; passed: boolean; fix?: string | null }>>([]);
 
   const filteredLogs = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -44,7 +45,10 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
   const handleRunLeakCheck = async () => {
     setLeakChecking(true);
     try {
-      await GhostApi.runDoctor();
+      const res = await GhostApi.runDoctor();
+      if (res && res.checks) {
+        setDoctorChecks(res.checks);
+      }
     } catch (e) {
       console.warn('Doctor run failed:', e);
     }
@@ -99,6 +103,27 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
             <div className="font-mono tabular-nums text-[#ECF2EE] mt-1">{leakCheckedAt}</div>
           </div>
         </div>
+
+        {doctorChecks.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[#1A231E]">
+            <div className="text-xs font-semibold text-[#ECF2EE] mb-2">Host Doctor Checks:</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {doctorChecks.map((chk) => (
+                <div
+                  key={chk.id}
+                  className={`p-2 rounded border text-xs flex items-center justify-between ${
+                    chk.passed
+                      ? 'bg-[#121B15] border-[#22C55E]/30 text-[#4ADE80]'
+                      : 'bg-[#1C1212] border-[#EF4444]/30 text-[#FCA5A5]'
+                  }`}
+                >
+                  <span className="font-medium">{chk.name}</span>
+                  <span className="font-mono text-[10px] uppercase font-bold">{chk.passed ? 'PASS' : 'FAIL'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Core Kernel & Router Logs */}

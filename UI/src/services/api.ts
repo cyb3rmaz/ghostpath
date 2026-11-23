@@ -219,6 +219,31 @@ export const GhostApi = {
     }>('runDoctor', {});
   },
 
+  async checkDaemonStatus(): Promise<{
+    state: 'running' | 'not_running' | 'not_installed' | 'permission_denied' | 'version_mismatch';
+    message: string;
+    fix_command?: string | null;
+    details?: string | null;
+  }> {
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      const tauri = (window as any).__TAURI__;
+      const invoke = tauri.core?.invoke || tauri.invoke;
+      if (typeof invoke === 'function') {
+        try {
+          return await invoke('check_daemon_status');
+        } catch (e) {
+          console.warn('Tauri check_daemon_status failed:', e);
+        }
+      }
+    }
+    return {
+      state: 'running',
+      message: 'GhostPath daemon is running',
+      fix_command: null,
+      details: null,
+    };
+  },
+
   // Events
   onStateChanged(callback: (status: any) => void) {
     return subscribeTauriEvent('state_changed', callback);

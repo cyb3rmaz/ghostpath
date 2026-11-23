@@ -38,6 +38,7 @@ import { DiagnosticsView } from './components/DiagnosticsView';
 import { SettingsView } from './components/SettingsView';
 import { AddProfileModal } from './components/AddProfileModal';
 import { GhostApi } from './services/api';
+import { DaemonStatusBanner, DaemonHealth } from './components/DaemonStatusBanner';
 
 const NAV_ITEMS: { id: NavSection; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'tunnel', label: 'Tunnel', icon: Shield },
@@ -64,6 +65,11 @@ const nowTimestamp = () => {
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<NavSection>('tunnel');
+  const [daemonHealth, setDaemonHealth] = useState<DaemonHealth | null>(null);
+
+  const checkHealth = () => {
+    GhostApi.checkDaemonStatus().then(setDaemonHealth).catch(() => {});
+  };
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
 
@@ -162,6 +168,8 @@ export default function App() {
 
   // Synchronize state with real daemon backend on mount and subscribe to streaming events
   useEffect(() => {
+    checkHealth();
+
     GhostApi.getStatus()
       .then((res) => {
         if (res.status) {
@@ -602,6 +610,9 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {/* Daemon State Notification Banner */}
+        <DaemonStatusBanner health={daemonHealth} onRefresh={checkHealth} />
 
         {/* Main Content */}
         <main className="flex-1 p-6 max-w-[1240px] w-full mx-auto">

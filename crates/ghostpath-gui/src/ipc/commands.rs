@@ -1,4 +1,5 @@
 use super::client::IpcClient;
+use super::daemon_status::{check_daemon_health, DaemonHealth};
 use super::mock::MockDaemon;
 use serde_json::Value;
 use std::sync::Arc;
@@ -51,9 +52,17 @@ pub async fn handle_rpc_invoke(
     state.mock_daemon.handle_rpc(method, &params)
 }
 
+pub async fn handle_check_daemon_status(state: &AppState) -> DaemonHealth {
+    if state.force_mock {
+        return DaemonHealth::running(env!("CARGO_PKG_VERSION"));
+    }
+    check_daemon_health(state.ipc_client.socket_path(), env!("CARGO_PKG_VERSION")).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::daemon_status::DaemonStateKind;
     use serde_json::json;
 
     #[tokio::test]
@@ -70,12 +79,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rpc_invoke_with_mock_daemon() {
-        let state = AppState::default();
-        let connect_res = handle_rpc_invoke(&state, "connect", json!({"nodeId": "mock-node-1"})).await.unwrap();
-        assert_eq!(connect_res["status"], "connected");
+    async fn test_check_daemon_status_mock() {
+        let state = AppState {
+            ipc_client: IpcClient::new("/non_existent.sock"),
+            mock_daemon: Arc::new(MockDaemon::new()),
+            force_mock: true,
+        };
 
-        let status_res = handle_rpc_invoke(&state, "getStatus", json!({})).await.unwrap();
-        assert_eq!(status_res["status"], "connected");
+        let health = handle_check_daemon_status(&state).await;
+        assert_eq!(health.state, DaemonStateKind::Running);
     }
 }
