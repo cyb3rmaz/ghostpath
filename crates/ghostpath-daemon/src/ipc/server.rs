@@ -46,11 +46,7 @@ impl IpcServer {
 
             // Attempt to assign group ownership to 'ghostpath' if it exists
             if let Ok(Some(group)) = nix::unistd::Group::from_name("ghostpath") {
-                if let Err(e) = nix::unistd::chown(
-                    &self.socket_path,
-                    None,
-                    Some(group.gid),
-                ) {
+                if let Err(e) = nix::unistd::chown(&self.socket_path, None, Some(group.gid)) {
                     debug!("Could not chown socket to ghostpath group: {}", e);
                 }
             }

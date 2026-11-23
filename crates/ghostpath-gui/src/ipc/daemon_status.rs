@@ -59,30 +59,35 @@ impl DaemonHealth {
     pub fn version_mismatch(client_ver: &str, daemon_ver: &str) -> Self {
         Self {
             state: DaemonStateKind::VersionMismatch,
-            message: format!("Version mismatch: GUI is v{}, daemon is v{}.", client_ver, daemon_ver),
+            message: format!(
+                "Version mismatch: GUI is v{}, daemon is v{}.",
+                client_ver, daemon_ver
+            ),
             fix_command: Some("sudo systemctl restart ghostpathd".to_string()),
             details: Some("Restart the daemon service to reload matching binaries.".to_string()),
         }
     }
 
     pub fn inspect_offline(socket_path: &Path, daemon_bin_path: Option<&Path>) -> Self {
-        let bin_exists = daemon_bin_path
-            .map(|p| p.exists())
-            .unwrap_or_else(|| {
-                Path::new("/usr/sbin/ghostpathd").exists()
-                    || Path::new("/usr/bin/ghostpathd").exists()
-                    || Path::new("/usr/local/bin/ghostpathd").exists()
-            });
+        let bin_exists = daemon_bin_path.map(|p| p.exists()).unwrap_or_else(|| {
+            Path::new("/usr/sbin/ghostpathd").exists()
+                || Path::new("/usr/bin/ghostpathd").exists()
+                || Path::new("/usr/local/bin/ghostpathd").exists()
+        });
 
         if !socket_path.exists() {
             if !bin_exists {
                 Self::not_installed()
             } else {
-                Self::not_running(Some("Socket file does not exist in /run/ghostpath/".to_string()))
+                Self::not_running(Some(
+                    "Socket file does not exist in /run/ghostpath/".to_string(),
+                ))
             }
         } else {
             // Socket file exists but connection might fail or be refused
-            Self::not_running(Some("Socket exists but daemon is not responding.".to_string()))
+            Self::not_running(Some(
+                "Socket exists but daemon is not responding.".to_string(),
+            ))
         }
     }
 }
@@ -97,7 +102,9 @@ pub async fn check_daemon_health(socket_path: &Path, expected_version: &str) -> 
             return DaemonHealth::inspect_offline(socket_path, None);
         }
 
-        match tokio::time::timeout(Duration::from_millis(500), UnixStream::connect(socket_path)).await {
+        match tokio::time::timeout(Duration::from_millis(500), UnixStream::connect(socket_path))
+            .await
+        {
             Ok(Ok(_stream)) => {
                 // Connected successfully
                 DaemonHealth::running(expected_version)
@@ -106,14 +113,14 @@ pub async fn check_daemon_health(socket_path: &Path, expected_version: &str) -> 
                 if e.kind() == std::io::ErrorKind::PermissionDenied {
                     DaemonHealth::permission_denied()
                 } else if e.kind() == std::io::ErrorKind::ConnectionRefused {
-                    DaemonHealth::not_running(Some("Stale socket file detected (connection refused).".to_string()))
+                    DaemonHealth::not_running(Some(
+                        "Stale socket file detected (connection refused).".to_string(),
+                    ))
                 } else {
                     DaemonHealth::not_running(Some(format!("Connection error: {}", e)))
                 }
             }
-            Err(_) => {
-                DaemonHealth::not_running(Some("Connection timed out.".to_string()))
-            }
+            Err(_) => DaemonHealth::not_running(Some("Connection timed out.".to_string())),
         }
     }
     #[cfg(not(unix))]

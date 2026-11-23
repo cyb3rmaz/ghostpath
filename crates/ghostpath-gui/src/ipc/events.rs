@@ -16,10 +16,13 @@ pub fn spawn_event_loop(app: AppHandle, client: IpcClient) {
             if !client.is_available().await {
                 if !last_status.is_empty() && last_status != "disconnected" {
                     last_status = "disconnected".to_string();
-                    let _ = app.emit("state_changed", serde_json::json!({
-                        "status": "disconnected",
-                        "reason": "Daemon unreachable"
-                    }));
+                    let _ = app.emit(
+                        "state_changed",
+                        serde_json::json!({
+                            "status": "disconnected",
+                            "reason": "Daemon unreachable"
+                        }),
+                    );
                 }
                 continue;
             }

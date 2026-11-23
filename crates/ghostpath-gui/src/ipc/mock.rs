@@ -59,17 +59,15 @@ impl MockDaemon {
                         "port": 443,
                         "latencyMs": 39,
                         "region": "NL"
-                    })
+                    }),
                 ],
-                logs: vec![
-                    json!({
-                        "id": "1",
-                        "timestamp": "20:00:01",
-                        "level": "info",
-                        "target": "ghostpath-daemon",
-                        "message": "GhostPath mock daemon initialized"
-                    })
-                ],
+                logs: vec![json!({
+                    "id": "1",
+                    "timestamp": "20:00:01",
+                    "level": "info",
+                    "target": "ghostpath-daemon",
+                    "message": "GhostPath mock daemon initialized"
+                })],
             })),
         }
     }
@@ -101,7 +99,11 @@ impl MockDaemon {
             }
             "getStatus" => {
                 let active_node = state.active_node_id.as_ref().and_then(|id| {
-                    state.nodes.iter().find(|n| n.get("id").and_then(|v| v.as_str()) == Some(id)).cloned()
+                    state
+                        .nodes
+                        .iter()
+                        .find(|n| n.get("id").and_then(|v| v.as_str()) == Some(id))
+                        .cloned()
                 });
 
                 Ok(json!({
@@ -185,7 +187,9 @@ mod tests {
         assert_eq!(status["interface"], "ghost0");
 
         // 2. Connect
-        let connect_res = daemon.handle_rpc("connect", &json!({"nodeId": "mock-node-1"})).unwrap();
+        let connect_res = daemon
+            .handle_rpc("connect", &json!({"nodeId": "mock-node-1"}))
+            .unwrap();
         assert_eq!(connect_res["status"], "connected");
 
         // 3. Status is now connected

@@ -104,3 +104,44 @@ This document records the architectural, network, and security decisions for **G
   - **Startup Recovery:** Upon launch, `ghostpathd` checks for an existing undo journal. If found (indicating a previous unclean exit or `SIGKILL`), it rolls back all recorded changes before initializing fresh state.
   - **Signal Handling & RAII:** `SIGINT`, `SIGTERM`, and `SIGHUP` invoke graceful teardown. RAII guards in Rust ensure unwinding clears active routes and interfaces.
   - **Strict Object Ownership:** Only rules with priority `5180`/`5181`, fwmark `0x4750`, interface `ghost0`, and table `ghostpath` are created or modified. Never flush entire tables.
+
+---
+
+## 7. Tauri 2 Desktop Shell & Zero-Network Offline Architecture
+
+- **Date:** 2026-11-23
+- **Status:** Approved
+- **Context:**
+  The GhostPath web UI previously required a local web server / browser. The application must run as a native, installable Linux desktop app with tray support, offline assets, and strict security boundaries.
+- **Decision:**
+  - **Framework:** Tauri 2 with WebKitGTK (`webkit2gtk-4.1`). Uses the system-provided WebView, resulting in an ~8.8MB AppImage and ~6.3MB Debian package (versus 150MB+ for Electron).
+  - **Zero-Network UI:** The UI does not listen on or connect to `127.0.0.1`, `localhost`, or any network port. All frontend communication is bridged via Tauri IPC `invoke` commands and push events.
+  - **Local Typography & Assets:** All external Google Fonts CDN links are completely removed. Fonts (`Plus Jakarta Sans`, `DM Sans`, `JetBrains Mono`, `Vazirmatn` Persian) are bundled locally via npm `@fontsource` packages.
+  - **Strict Content Security Policy (CSP):**
+    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'`
+    Blocks any outbound network requests from the webview context.
+  - **Unprivileged Execution:** The GUI process runs as the standard user, never as `root`. Privileged operations (TUN allocation, routing, nftables, DNS proxy) remain strictly encapsulated in `ghostpathd`.
+
+---
+
+## 8. Flatpak Sandboxing Feasibility & Packaging Strategy
+
+- **Date:** 2026-11-23
+- **Status:** Approved
+- **Context:**
+  Evaluate shipping GhostPath as a Flatpak on Flathub.
+- **Evaluation & Technical Blockers:**
+  - Flatpak containers run in unprivileged user namespaces (`bubblewrap`) with isolated network namespaces or restricted permissions.
+  - A Flatpak application **cannot**:
+    1. Create kernel TUN interfaces (`/dev/net/tun`) without elevated host capabilities.
+    2. Manipulate host routing tables (`ip route`, `ip rule`).
+    3. Modify host `nftables` or `iptables` firewall rules.
+    4. Directly manage systemd services on the host (`systemctl enable --now ghostpathd`).
+  - While Flatpak supports `--filesystem=/run/ghostpath` to talk to a pre-existing host daemon over a Unix socket, it **cannot self-install or manage the daemon**. Packaging only the GUI in Flatpak leaves users with a non-functional app unless they also install `ghostpathd` via `.deb`, `.rpm`, or AUR on the host.
+- **Decision:**
+  - Do **not** distribute GhostPath VPN primarily as a standalone Flatpak at this time.
+  - Support native Linux packages that bundle both the unprivileged GUI and the root systemd daemon together:
+    - **Debian / Ubuntu:** `.deb` package with postinst system group and systemd service registration.
+    - **Fedora / RHEL:** `.rpm` package via RPM spec.
+    - **Arch Linux:** `PKGBUILD` for AUR.
+    - **AppImage:** Standalone portable GUI executable with built-in first-run diagnostics that detects missing host daemon and provides copyable one-line installation commands.

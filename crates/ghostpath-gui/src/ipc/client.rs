@@ -47,10 +47,13 @@ impl IpcClient {
             if !self.socket_path.exists() {
                 return false;
             }
-            tokio::time::timeout(Duration::from_millis(200), UnixStream::connect(&self.socket_path))
-                .await
-                .map(|r| r.is_ok())
-                .unwrap_or(false)
+            tokio::time::timeout(
+                Duration::from_millis(200),
+                UnixStream::connect(&self.socket_path),
+            )
+            .await
+            .map(|r| r.is_ok())
+            .unwrap_or(false)
         }
         #[cfg(not(unix))]
         {
@@ -75,8 +78,18 @@ impl IpcClient {
             let connect_fut = UnixStream::connect(&self.socket_path);
             let mut stream = tokio::time::timeout(Duration::from_millis(800), connect_fut)
                 .await
-                .map_err(|_| anyhow::anyhow!("Timeout connecting to GhostPath daemon at {:?}", self.socket_path))?
-                .with_context(|| format!("Failed to connect to GhostPath daemon at {:?}", self.socket_path))?;
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "Timeout connecting to GhostPath daemon at {:?}",
+                        self.socket_path
+                    )
+                })?
+                .with_context(|| {
+                    format!(
+                        "Failed to connect to GhostPath daemon at {:?}",
+                        self.socket_path
+                    )
+                })?;
 
             let mut out_str = serde_json::to_string(&payload)?;
             out_str.push('\n');
@@ -99,14 +112,16 @@ impl IpcClient {
 
             if let Some(err) = resp_json.get("error") {
                 let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-                let message = err.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown daemon error");
+                let message = err
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("Unknown daemon error");
                 anyhow::bail!("Daemon error [{}]: {}", code, message);
             }
 
-            resp_json
-                .get("result")
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("Missing 'result' in daemon response: {:?}", resp_json))
+            resp_json.get("result").cloned().ok_or_else(|| {
+                anyhow::anyhow!("Missing 'result' in daemon response: {:?}", resp_json)
+            })
         }
         #[cfg(not(unix))]
         {
@@ -205,6 +220,8 @@ mod tests {
         let client = IpcClient::new(&sock_path);
         assert!(!client.is_available().await);
         let err = client.call("getStatus", json!({})).await.unwrap_err();
-        assert!(err.to_string().contains("Failed to connect") || err.to_string().contains("Timeout"));
+        assert!(
+            err.to_string().contains("Failed to connect") || err.to_string().contains("Timeout")
+        );
     }
 }

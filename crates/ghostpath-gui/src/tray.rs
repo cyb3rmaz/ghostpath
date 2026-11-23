@@ -7,13 +7,22 @@ use tracing::{info, warn};
 
 pub fn setup_system_tray(app: &AppHandle) -> Result<bool, Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Open GhostPath VPN", true, None::<&str>)?;
-    let toggle_item = MenuItem::with_id(app, "toggle_connect", "Toggle Connection", true, None::<&str>)?;
+    let toggle_item = MenuItem::with_id(
+        app,
+        "toggle_connect",
+        "Toggle Connection",
+        true,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = match Menu::with_items(app, &[&show_item, &toggle_item, &quit_item]) {
         Ok(m) => m,
         Err(e) => {
-            warn!("Could not construct tray menu: {}. Fallback to window mode.", e);
+            warn!(
+                "Could not construct tray menu: {}. Fallback to window mode.",
+                e
+            );
             return Ok(false);
         }
     };

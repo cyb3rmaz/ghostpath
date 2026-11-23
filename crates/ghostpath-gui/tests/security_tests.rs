@@ -20,12 +20,30 @@ fn test_tauri_conf_security_csp() {
         .expect("CSP must be configured in app.security.csp");
 
     // Strict offline security checks
-    assert!(csp.contains("default-src 'self'"), "CSP must restrict default-src to 'self'");
-    assert!(csp.contains("connect-src 'none'"), "CSP must block all network connections with connect-src 'none'");
-    assert!(csp.contains("script-src 'self'"), "CSP must restrict scripts to 'self'");
-    assert!(csp.contains("font-src 'self'"), "CSP must restrict fonts to 'self'");
-    assert!(!csp.contains("http://"), "CSP must not allow insecure http origins");
-    assert!(!csp.contains("https://"), "CSP must not allow external https origins");
+    assert!(
+        csp.contains("default-src 'self'"),
+        "CSP must restrict default-src to 'self'"
+    );
+    assert!(
+        csp.contains("connect-src 'none'"),
+        "CSP must block all network connections with connect-src 'none'"
+    );
+    assert!(
+        csp.contains("script-src 'self'"),
+        "CSP must restrict scripts to 'self'"
+    );
+    assert!(
+        csp.contains("font-src 'self'"),
+        "CSP must restrict fonts to 'self'"
+    );
+    assert!(
+        !csp.contains("http://"),
+        "CSP must not allow insecure http origins"
+    );
+    assert!(
+        !csp.contains("https://"),
+        "CSP must not allow external https origins"
+    );
 }
 
 #[test]
@@ -60,14 +78,26 @@ fn test_ui_no_remote_network_links() {
     assert!(index_src.exists(), "UI/index.html must exist");
 
     let src_content = fs::read_to_string(&index_src).expect("Read UI/index.html");
-    assert!(!src_content.contains("fonts.googleapis.com"), "No external Google Fonts allowed");
-    assert!(!src_content.contains("fonts.gstatic.com"), "No external font preconnect allowed");
+    assert!(
+        !src_content.contains("fonts.googleapis.com"),
+        "No external Google Fonts allowed"
+    );
+    assert!(
+        !src_content.contains("fonts.gstatic.com"),
+        "No external font preconnect allowed"
+    );
 
     // If dist exists, check dist/index.html as well
     let dist_index = repo_root.join("UI/dist/index.html");
     if dist_index.exists() {
         let dist_content = fs::read_to_string(&dist_index).expect("Read UI/dist/index.html");
-        assert!(!dist_content.contains("http://"), "Built dist must contain zero remote http references");
-        assert!(!dist_content.contains("https://"), "Built dist must contain zero remote https references");
+        assert!(
+            !dist_content.contains("http://"),
+            "Built dist must contain zero remote http references"
+        );
+        assert!(
+            !dist_content.contains("https://"),
+            "Built dist must contain zero remote https references"
+        );
     }
 }

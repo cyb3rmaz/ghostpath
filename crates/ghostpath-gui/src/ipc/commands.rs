@@ -13,7 +13,9 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let force_mock = std::env::var("GHOSTPATH_MOCK_GUI").map(|v| v == "1").unwrap_or(false);
+        let force_mock = std::env::var("GHOSTPATH_MOCK_GUI")
+            .map(|v| v == "1")
+            .unwrap_or(false);
         Self {
             ipc_client: IpcClient::default(),
             mock_daemon: Arc::new(MockDaemon::new()),
@@ -43,7 +45,10 @@ pub async fn handle_rpc_invoke(
         match state.ipc_client.call(method, params.clone()).await {
             Ok(res) => return Ok(res),
             Err(e) => {
-                warn!("Live daemon IPC call [{}] failed: {}. Falling back to mock/offline", method, e);
+                warn!(
+                    "Live daemon IPC call [{}] failed: {}. Falling back to mock/offline",
+                    method, e
+                );
             }
         }
     }
@@ -73,7 +78,9 @@ mod tests {
             force_mock: true,
         };
 
-        let res = handle_rpc_invoke(&state, "getStatus", json!({})).await.unwrap();
+        let res = handle_rpc_invoke(&state, "getStatus", json!({}))
+            .await
+            .unwrap();
         assert_eq!(res["status"], "disconnected");
         assert_eq!(res["interface"], "ghost0");
     }

@@ -220,3 +220,59 @@ Event types:
 - `log_appended`: realtime log streaming
 - `nodes_updated`: node updates after ping or subscription refresh
 - `doctor_alert`: health warnings (e.g. detected DNS leak or route flap)
+
+---
+
+## 4. Tauri Desktop IPC Commands & Webview Events
+
+The desktop application (`ghostpath-gui`) eliminates the HTTP/WebSocket bridge and exposes direct native Tauri commands and event streams to the React UI:
+
+### 4.1 Native Tauri Commands (`invoke`)
+
+#### `rpc_request`
+Passes JSON-RPC 2.0 requests directly to `ghostpathd` via Unix domain socket `/run/ghostpath/ghostpathd.sock` (with offline in-memory fallback):
+- **Invocation:**
+  ```typescript
+  import { invoke } from '@tauri-apps/api/core';
+  const result = await invoke('rpc_request', { method: 'getStatus', params: {} });
+  ```
+
+#### `check_daemon_status`
+Queries host service health, checking socket existence, systemd state, permissions, and version match:
+- **Invocation:**
+  ```typescript
+  const health = await invoke<DaemonHealth>('check_daemon_status');
+  ```
+- **Returns:**
+  ```json
+  {
+    "state": "Running", // "Running" | "NotRunning" | "NotInstalled" | "PermissionDenied" | "VersionMismatch"
+    "message": "GhostPath daemon is running (v0.1.0)",
+    "version": "0.1.0",
+    "fix_command": null
+  }
+  ```
+
+### 4.2 Webview Event Streams (`listen`)
+
+The Rust shell streams daemon notifications and desktop lifecycle events directly into the webview:
+
+#### `state_changed`
+Emitted when the VPN tunnel status changes (`disconnected`, `connecting`, `connected`, `failed`).
+
+#### `traffic_updated`
+Emitted every second during an active session with real-time download/upload rates and accumulated bytes.
+
+#### `deep_link_imported`
+Emitted when the application is launched or focused via a VPN protocol URI (`vless://`, `vmess://`, `trojan://`, `ss://`):
+- **Payload:**
+  ```json
+  {
+    "protocol": "VLESS",
+    "raw": "vless://...#Frankfurt",
+    "name": "Frankfurt"
+  }
+  ```
+
+#### `tray_toggle_connect`
+Emitted when the user clicks "Connect" / "Disconnect" in the native system tray menu.

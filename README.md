@@ -56,7 +56,14 @@ GhostPath VPN is organized as a modular Cargo workspace:
 | **`ghostpath-net`** | Netlink policy routing manager, `UndoJournal`, `DnsManager`, `DnsProxy`, and `KillSwitch`. |
 | **`ghostpath-daemon`** | Privileged system daemon (`ghostpathd`), `SO_PEERCRED` Unix socket IPC (`/run/ghostpath/ghostpathd.sock`). |
 | **`ghostpath-cli`** | User-friendly CLI client (`ghostpath connect`, `disconnect`, `status`, `doctor`, etc.). |
-| **`ghostpath-gui`** | Native desktop UI bridge connecting the React 19 frontend to `ghostpathd`. |
+| **`ghostpath-gui`** | Native Linux desktop application built with Tauri 2 + WebKitGTK and React 19. |
+
+### Desktop Application Details
+See [docs/DESKTOP_APP.md](docs/DESKTOP_APP.md) for full architecture, IPC specifications, desktop integration, and troubleshooting.
+- **Offline & Zero-Network Webview:** No local HTTP server, no open web ports. Uses Tauri IPC commands and events over `/run/ghostpath/ghostpathd.sock`.
+- **System Tray & Single Instance:** Quick connect/disconnect toggle from tray, close-to-hide, single-instance window focusing.
+- **VPN Link Associations:** One-click import for `vless://`, `vmess://`, `trojan://`, and `ss://` links.
+- **Strict CSP:** Bundled local typography (Vazirmatn Persian, Plus Jakarta Sans, DM Sans, JetBrains Mono) with `connect-src 'none'`.
 
 ### Linux Identifiers
 - **TUN Interface:** `ghost0` (Address `10.8.0.2/24`, Peer `10.8.0.1`, MTU `1420`)
@@ -149,6 +156,8 @@ Running GhostPath System Doctor...
 - Linux kernel >= 5.10
 - Rust 1.75+ (`rustup default stable`)
 - Build essentials: `gcc`, `pkg-config`, `libssl-dev`
+- GUI dependencies: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libappindicator3-dev`, `librsvg2-dev`
+- Frontend dependencies: Node.js 20+ (`npm`)
 - System tools: `iproute2`, `iptables` / `nftables`
 
 ```bash
@@ -156,14 +165,17 @@ Running GhostPath System Doctor...
 git clone https://github.com/cybermaz/ghost_path.git
 cd ghost_path
 
+# Build offline UI assets
+cd UI && npm install --legacy-peer-deps && npm run build && cd ..
+
 # Build all workspace crates in release mode
-cargo build --release
+cargo build --release --workspace
 
-# Run unit tests across workspace
+# Build all distribution packages (.deb, AppImage, RPM spec, PKGBUILD)
+./scripts/build_all_packages.sh
+
+# Run unit and integration tests across workspace
 cargo test --workspace
-
-# Run network namespace integration tests (requires root or unshare -n)
-sudo bash scripts/run_namespace_test.sh
 ```
 
 ---

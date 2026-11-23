@@ -1,0 +1,142 @@
+name: Desktop CI & Packaging
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  test-and-package-ubuntu:
+    name: Build & Package (Ubuntu ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies (WebKitGTK, AppIndicator, OpenSSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            pkg-config \
+            desktop-file-utils \
+            appstream \
+            libfuse2
+
+      - name: Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: UI/package-lock.json
+
+      - name: Setup Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build UI (Offline Vite bundle)
+        run: |
+          cd UI
+          npm install --legacy-peer-deps
+          npm run build
+
+      - name: Code Formatting Check
+        run: cargo fmt --check
+
+      - name: Clippy Lint Check
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Run Test Suite
+        run: cargo test --workspace
+
+      - name: Run GUI End-to-End & Security Tests
+        run: |
+          cargo test -p ghostpath-gui --test security_tests
+          cargo test -p ghostpath-gui --test gui_e2e_tests
+
+      - name: Install appimagetool
+        run: |
+          sudo curl -sL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o /usr/local/bin/appimagetool
+          sudo chmod +x /usr/local/bin/appimagetool
+          # Extract to run without FUSE in container
+          cd /tmp
+          /usr/local/bin/appimagetool --appimage-extract
+          sudo cp -r squashfs-root /opt/appimagetool
+          sudo ln -sf /opt/appimagetool/AppRun /usr/local/bin/appimagetool
+          rm -rf squashfs-root
+
+      - name: Build All Linux Packages (.deb, AppImage)
+        run: |
+          chmod +x scripts/build_all_packages.sh packaging/build-deb.sh packaging/appimage/build-appimage.sh packaging/appimage/AppRun
+          ./scripts/build_all_packages.sh
+
+      - name: Upload Packaging Artifacts
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-dist-packages
+          path: dist/*
+
+  package-fedora:
+    name: Build & Verify Spec (Fedora Latest)
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Install Dependencies
+        run: |
+          dnf -y install \
+            git rust cargo gcc pkgconfig openssl-devel \
+            webkit2gtk4.1-devel libappindicator-gtk3-devel \
+            systemd-rpm-macros rpm-build nodejs npm
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build UI
+        run: |
+          cd UI
+          npm install --legacy-peer-deps
+          npm run build
+
+      - name: Workspace Compilation & Unit Tests
+        run: |
+          cargo build --release --workspace
+          cargo test --workspace
+
+  package-arch:
+    name: Build & Verify PKGBUILD (Arch Linux)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install Dependencies
+        run: |
+          pacman -Syu --noconfirm \
+            base-devel git rust cargo pkgconf openssl \
+            webkit2gtk-4.1 libappindicator-gtk3 nodejs npm
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build UI
+        run: |
+          cd UI
+          npm install --legacy-peer-deps
+          npm run build
+
+      - name: Workspace Compilation & Unit Tests
+        run: |
+          cargo test --workspace

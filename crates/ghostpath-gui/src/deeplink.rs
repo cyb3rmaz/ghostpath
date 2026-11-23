@@ -12,7 +12,14 @@ pub fn parse_vpn_deep_link(uri_str: &str) -> Option<VpnLinkInfo> {
     let trimmed = uri_str.trim();
     let lower = trimmed.to_lowercase();
 
-    let protocols = ["vless://", "vmess://", "trojan://", "ss://", "hysteria2://", "tuic://"];
+    let protocols = [
+        "vless://",
+        "vmess://",
+        "trojan://",
+        "ss://",
+        "hysteria2://",
+        "tuic://",
+    ];
     let matched_proto = protocols.iter().find(|p| lower.starts_with(*p))?;
 
     let proto_name = matched_proto.trim_end_matches("://").to_uppercase();
