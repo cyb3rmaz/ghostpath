@@ -14,16 +14,16 @@ This document records the remaining known risks, environment limitations, and de
 
 ## 2. Technical Residual Risks
 
-1. **Config Storage at Rest (`~/.config` / `/var/lib/ghostpath/config/config.toml`) — Medium:**
-   - Profile `raw_link` values (containing UUIDs, Reality keys, WireGuard private keys) and subscription URLs are stored in TOML/JSON with `0600` permissions via `atomic_write_private()`, rather than encrypted in the Linux Secret Service / kernel keyring.
-2. **Tauri Global API & Style CSP (`crates/ghostpath-gui/tauri.conf.json`) — Low:**
+1. **Tauri Global API & Style CSP (`crates/ghostpath-gui/tauri.conf.json`) — Low:**
    - `withGlobalTauri: true` and `style-src 'self' 'unsafe-inline'` remain enabled because `UI/src/services/api.ts` accesses `window.__TAURI__` and bundled styles use inline style attributes. Migrating `api.ts` to `@tauri-apps/api` imports will allow disabling `withGlobalTauri`.
-3. **Systemd `ReadWritePaths` Scope — Low:**
+2. **Systemd `ReadWritePaths` Scope — Low:**
    - `systemd/ghostpathd.service` scopes writes to `-/etc/geolocation -/etc/geoclue -/etc/resolv.conf -/etc/localtime -/etc/timezone`. On systems where `/etc/localtime` or `/etc/resolv.conf` is a symlink that needs replacement rather than `timedatectl`/`resolvectl` D-Bus calls, fallback symlink replacement is intentionally blocked by `O_NOFOLLOW` to prevent symlink-following attacks.
-4. **`clippy::pedantic` Documentation Lints — Info:**
+3. **`clippy::pedantic` Documentation Lints — Info:**
    - `cargo clippy --workspace --all-targets -- -D warnings` passes cleanly; `-W clippy::pedantic` flags `missing_errors_doc` and `doc_markdown` in `ghostpath-core`.
-5. **Transitive Advisories (`cargo audit`) — Info:**
+4. **Transitive Advisories (`cargo audit`) — Info:**
    - `cargo audit` reported 0 CVEs across workspace crates, with `unmaintained` warnings on `zvariant`/`zvariant_derive` and an upstream `unsound` advisory (`RUSTSEC-2024-0429`) on transitive `glib 0.18.5` pulled in by Tauri/WebKitGTK.
+
+*(Note: Previously listed Medium risk #1 — plaintext `raw_link` and subscription URLs at rest — has been **resolved** via `ChaCha20-Poly1305` AEAD encryption in `crates/ghostpath-core/src/crypto.rs` with `0600` `.master.key`.)*
 
 ## 3. Operational Limitations (Inherent to Threat Model)
 
