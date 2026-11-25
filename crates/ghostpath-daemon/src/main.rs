@@ -50,9 +50,17 @@ async fn main() -> Result<()> {
                 count = journal.actions.len(),
                 "Found undo journal actions to revert"
             );
+            if let Err(e) = ghostpath_net::GeoSpoofManager::recover_from_journal(&journal, args.dry_run) {
+                tracing::warn!("Could not recover geo/timezone state from journal: {}", e);
+            }
             ghostpath_net::UndoJournal::remove_journal_file()?;
             info!("Undo journal cleared");
         } else {
+            // Even without journal, ensure orphaned timezone/geo backups are restored
+            let mgr = ghostpath_net::GeoSpoofManager::new(args.dry_run);
+            if mgr.is_spoof_active() {
+                let _ = mgr.restore();
+            }
             info!("No stale undo journal found");
         }
         return Ok(());

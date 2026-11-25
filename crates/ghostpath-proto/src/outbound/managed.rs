@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use ghostpath_core::models::{CoreEngine, ServerNode};
+use ghostpath_core::models::{CoreEngine, RoutingRule, ServerNode};
 use ghostpath_core::{CoreError, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -20,6 +20,7 @@ pub struct ManagedCoreOutbound {
     socks_port: u16,
     http_port: u16,
     routing_mark: u32,
+    rules: Vec<RoutingRule>,
     child_process: Arc<Mutex<Option<Child>>>,
     config_path: PathBuf,
     active_node: Option<ServerNode>,
@@ -33,10 +34,16 @@ impl ManagedCoreOutbound {
             socks_port,
             http_port,
             routing_mark,
+            rules: Vec::new(),
             child_process: Arc::new(Mutex::new(None)),
             config_path,
             active_node: None,
         }
+    }
+
+    pub fn with_rules(mut self, rules: Vec<RoutingRule>) -> Self {
+        self.rules = rules;
+        self
     }
 
     pub fn socks_addr(&self) -> SocketAddr {
@@ -86,7 +93,7 @@ impl Outbound for ManagedCoreOutbound {
             socks_port: self.socks_port,
             http_port: self.http_port,
             routing_mark: self.routing_mark,
-            rules: vec![],
+            rules: self.rules.clone(),
         };
 
         let config_json = generate_singbox_config(node, &options)?;

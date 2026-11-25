@@ -156,6 +156,62 @@ pub async fn handle_rpc_request(engine: Arc<DaemonEngine>, req: JsonRpcRequest) 
                 Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
             }
         }
+        "updateRuleAction" => {
+            let rule_id = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let action_val = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("action"))
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            match serde_json::from_value::<ghostpath_core::models::RuleAction>(action_val) {
+                Ok(action) => match engine.update_rule_action(rule_id, action).await {
+                    Ok(res) => JsonRpcResponse::success(id, res),
+                    Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+                },
+                Err(e) => JsonRpcResponse::error(
+                    id,
+                    ERR_INVALID_PARAMS,
+                    format!("Invalid rule action: {e}"),
+                ),
+            }
+        }
+        "listGeoCountries" => match engine.list_geo_countries().await {
+            Ok(res) => JsonRpcResponse::success(id, res),
+            Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),
+        },
+        "getGeoSpoofStatus" => match engine.get_geo_spoof_status().await {
+            Ok(res) => JsonRpcResponse::success(id, res),
+            Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),
+        },
+        "updateGeoSpoof" => {
+            let patch = req.params.unwrap_or(serde_json::Value::Null);
+            match engine.update_geo_spoof(patch).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_INVALID_PARAMS, e.to_string()),
+            }
+        }
+        "applyGeoSpoof" => {
+            let country_code = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("countryCode"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            match engine.apply_geo_spoof(country_code).await {
+                Ok(res) => JsonRpcResponse::success(id, res),
+                Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+            }
+        }
+        "restoreGeoSpoof" => match engine.restore_geo_spoof().await {
+            Ok(res) => JsonRpcResponse::success(id, res),
+            Err(e) => JsonRpcResponse::error(id, ERR_SERVER, e.to_string()),
+        },
         "getSettings" => match engine.get_settings().await {
             Ok(res) => JsonRpcResponse::success(id, res),
             Err(e) => JsonRpcResponse::error(id, ERR_INTERNAL, e.to_string()),

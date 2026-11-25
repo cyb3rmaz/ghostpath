@@ -1,11 +1,17 @@
 use crate::doctor::SystemDoctor;
 use crate::tunnel::{AwgBackend, TunnelBackend};
 use anyhow::{bail, Result};
-use ghostpath_core::models::{ConnectionStatus, CoreEngine, NodeProtocol, ServerNode};
+use ghostpath_core::geo::{
+    find_country_preset, geo_country_presets, GeoCountryPreset, GeoSpoofMode, GeoSpoofSettings,
+    GeoSpoofStatus,
+};
+use ghostpath_core::models::{
+    ConnectionStatus, CoreEngine, NodeProtocol, RuleAction, RuleType, ServerNode,
+};
 use ghostpath_core::GhostConfig;
 use ghostpath_net::{
-    DnsGuard, DnsManager, DnsProxy, KillSwitch, KillSwitchGuard, RouteGuard, RouteManager,
-    UndoJournal,
+    DnsGuard, DnsManager, DnsProxy, GeoSpoofGuard, GeoSpoofManager, GeoSpoofPaths, KillSwitch,
+    KillSwitchGuard, RouteGuard, RouteManager, UndoJournal,
 };
 use ghostpath_proto::{parse_any_link, ManagedCoreOutbound, Outbound};
 use ghostpath_tun::TunDevice;
@@ -35,6 +41,7 @@ pub struct ActiveSession {
     pub tun_device: Option<TunDevice>,
     pub core_process: Option<ManagedCoreOutbound>,
     pub awg_backend: Option<AwgBackend>,
+    pub geo_spoof_guard: Option<GeoSpoofGuard>,
 }
 
 pub struct DaemonEngine {
@@ -46,10 +53,17 @@ pub struct DaemonEngine {
     bytes_in: Arc<AtomicU64>,
     bytes_out: Arc<AtomicU64>,
     last_traffic: Arc<RwLock<(Instant, u64, u64)>>,
+    geo_paths: GeoSpoofPaths,
+    manual_geo_guard: Arc<RwLock<Option<GeoSpoofGuard>>>,
+    applied_geo: Arc<RwLock<Option<(String, String, String)>>>,
 }
 
 impl DaemonEngine {
     pub fn new(dry_run: bool) -> Self {
+        Self::with_geo_paths(dry_run, GeoSpoofPaths::system())
+    }
+
+    pub fn with_geo_paths(dry_run: bool, geo_paths: GeoSpoofPaths) -> Self {
         let config = GhostConfig::load().unwrap_or_default();
         Self {
             config: Arc::new(RwLock::new(config)),
@@ -60,6 +74,9 @@ impl DaemonEngine {
             bytes_in: Arc::new(AtomicU64::new(0)),
             bytes_out: Arc::new(AtomicU64::new(0)),
             last_traffic: Arc::new(RwLock::new((Instant::now(), 0, 0))),
+            geo_paths,
+            manual_geo_guard: Arc::new(RwLock::new(None)),
+            applied_geo: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -249,12 +266,29 @@ impl DaemonEngine {
                     };
 
                     // 6. Launch proxy core supervisor
+                    let mut effective_rules = if config.rules.is_empty() {
+                        ghostpath_core::rules::default_routing_rules()
+                    } else {
+                        config.rules.clone()
+                    };
+                    if config.settings.geo_spoof.enabled && config.settings.geo_spoof.strict_geo_routing {
+                        for rule in &mut effective_rules {
+                            if rule.action == RuleAction::Direct
+                                && matches!(rule.r#type, RuleType::Geoip | RuleType::Geosite)
+                                && rule.pattern != "private"
+                            {
+                                rule.action = RuleAction::Proxy;
+                            }
+                        }
+                    }
+
                     let mut core = ManagedCoreOutbound::new(
                         config.settings.core_engine,
                         config.settings.socks_port,
                         config.settings.http_port,
                         0x4750,
-                    );
+                    )
+                    .with_rules(effective_rules);
                     if let Err(e) = core.start(&node).await {
                         warn!("Could not start managed proxy core: {}", e);
                     }
@@ -291,6 +325,53 @@ impl DaemonEngine {
                 }
             };
 
+        let geo_spoof_guard = if config.settings.geo_spoof.enabled
+            && config.settings.geo_spoof.apply_on_connect
+        {
+            if let Some(preset) = resolve_target_preset(&config.settings.geo_spoof, Some(&node)) {
+                if let Some(mut old_manual) = self.manual_geo_guard.write().await.take() {
+                    old_manual.disarm();
+                }
+                let mut journal = if self.geo_paths.use_systemd_tools {
+                    UndoJournal::load().ok().flatten().unwrap_or_default()
+                } else {
+                    UndoJournal::new()
+                };
+                let mgr = GeoSpoofManager::with_paths(self.geo_paths.clone(), self.dry_run);
+                match mgr.apply(
+                    &preset,
+                    config.settings.geo_spoof.spoof_timezone,
+                    config.settings.geo_spoof.spoof_geolocation,
+                    &mut journal,
+                ) {
+                    Ok(guard) => {
+                        if !self.dry_run && self.geo_paths.use_systemd_tools {
+                            let _ = journal.save();
+                        }
+                        *self.applied_geo.write().await = Some((
+                            preset.country_code.clone(),
+                            preset.country_name.clone(),
+                            preset.timezone.clone(),
+                        ));
+                        self.append_log(format!(
+                            "Geo/Timezone spoofing active: {} ({})",
+                            preset.country_name, preset.timezone
+                        ))
+                        .await;
+                        Some(guard)
+                    }
+                    Err(e) => {
+                        warn!("Could not apply geo/timezone spoofing: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let session = ActiveSession {
             node: node.clone(),
             start_time: Instant::now(),
@@ -301,6 +382,7 @@ impl DaemonEngine {
             tun_device,
             core_process,
             awg_backend,
+            geo_spoof_guard,
         };
 
         *self.session.write().await = Some(session);
@@ -343,6 +425,12 @@ impl DaemonEngine {
                 dp.stop();
             }
             // Drop guards to trigger automatic restoration
+            if let Some(guard) = session.geo_spoof_guard.take() {
+                drop(guard);
+                *self.applied_geo.write().await = None;
+                self.append_log("Restored original OS timezone and geolocation".to_string())
+                    .await;
+            }
             drop(session.killswitch_guard.take());
             drop(session.dns_guard.take());
             drop(session.route_guard.take());
@@ -931,6 +1019,205 @@ impl DaemonEngine {
         Ok(serde_json::json!({ "id": id, "enabled": new_state }))
     }
 
+    pub async fn update_rule_action(
+        &self,
+        id: &str,
+        action: RuleAction,
+    ) -> Result<serde_json::Value> {
+        let mut config = self.config.write().await;
+        if config.rules.is_empty() {
+            config.rules = ghostpath_core::rules::default_routing_rules();
+        }
+        if let Some(r) = config.rules.iter_mut().find(|r| r.id == id) {
+            r.action = action;
+        } else {
+            bail!("Routing rule '{}' not found", id);
+        }
+        let _ = config.save();
+        Ok(serde_json::json!({ "id": id, "action": action }))
+    }
+
+    pub async fn list_geo_countries(&self) -> Result<serde_json::Value> {
+        Ok(serde_json::to_value(geo_country_presets())?)
+    }
+
+    pub async fn get_geo_spoof_status(&self) -> Result<serde_json::Value> {
+        let settings = self.config.read().await.settings.geo_spoof.clone();
+        let mgr = GeoSpoofManager::with_paths(self.geo_paths.clone(), self.dry_run);
+        let (timedatectl_available, geoclue_available) = mgr.detect_capabilities();
+        let active_timezone = mgr.read_active_timezone();
+        let active_geolocation = mgr.read_active_geolocation();
+        let backed_up_timezone = mgr.read_backed_up_timezone();
+        let applied = self.applied_geo.read().await.clone();
+        let spoof_active = mgr.is_spoof_active() || applied.is_some();
+
+        let status = GeoSpoofStatus {
+            settings,
+            spoof_active,
+            applied_country_code: applied.as_ref().map(|a| a.0.clone()),
+            applied_country_name: applied.as_ref().map(|a| a.1.clone()),
+            applied_timezone: applied.as_ref().map(|a| a.2.clone()),
+            active_timezone,
+            active_geolocation,
+            backed_up_timezone,
+            geoclue_available,
+            timedatectl_available,
+        };
+        Ok(serde_json::to_value(&status)?)
+    }
+
+    pub async fn update_geo_spoof(&self, patch: serde_json::Value) -> Result<serde_json::Value> {
+        let updated_settings = {
+            let mut config = self.config.write().await;
+            let gs = &mut config.settings.geo_spoof;
+
+            if let Some(v) = patch.get("enabled").and_then(|v| v.as_bool()) {
+                gs.enabled = v;
+            }
+            if let Some(mode_str) = patch.get("mode").and_then(|v| v.as_str()) {
+                gs.mode = match mode_str {
+                    "manual" => GeoSpoofMode::Manual,
+                    _ => GeoSpoofMode::MatchNode,
+                };
+            }
+            if let Some(code) = patch.get("countryCode").and_then(|v| v.as_str()) {
+                if let Some(preset) = find_country_preset(code) {
+                    gs.country_code = preset.country_code;
+                } else {
+                    bail!("Unsupported country preset '{}'", code);
+                }
+            }
+            if let Some(v) = patch.get("spoofTimezone").and_then(|v| v.as_bool()) {
+                gs.spoof_timezone = v;
+            }
+            if let Some(v) = patch.get("spoofGeolocation").and_then(|v| v.as_bool()) {
+                gs.spoof_geolocation = v;
+            }
+            if let Some(v) = patch.get("applyOnConnect").and_then(|v| v.as_bool()) {
+                gs.apply_on_connect = v;
+            }
+            if let Some(v) = patch.get("strictGeoRouting").and_then(|v| v.as_bool()) {
+                gs.strict_geo_routing = v;
+            }
+
+            let copy = gs.clone();
+            let _ = config.save();
+            copy
+        };
+
+        let is_connected = *self.status.read().await == ConnectionStatus::Connected;
+        if is_connected {
+            if updated_settings.enabled {
+                self.apply_geo_spoof(None).await?;
+            } else {
+                self.restore_geo_spoof().await?;
+            }
+        }
+
+        self.get_geo_spoof_status().await
+    }
+
+    pub async fn apply_geo_spoof(
+        &self,
+        country_code: Option<String>,
+    ) -> Result<serde_json::Value> {
+        let (settings, active_node) = {
+            let cfg = self.config.read().await;
+            let session = self.session.read().await;
+            (
+                cfg.settings.geo_spoof.clone(),
+                session.as_ref().map(|s| s.node.clone()),
+            )
+        };
+
+        let preset = if let Some(ref code) = country_code {
+            find_country_preset(code)
+                .ok_or_else(|| anyhow::anyhow!("Unsupported country '{}'", code))?
+        } else {
+            resolve_target_preset(&settings, active_node.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("No valid country preset configured"))?
+        };
+
+        // Persist manual override if an explicit country was provided
+        if let Some(ref code) = country_code {
+            let mut cfg = self.config.write().await;
+            cfg.settings.geo_spoof.enabled = true;
+            cfg.settings.geo_spoof.mode = GeoSpoofMode::Manual;
+            cfg.settings.geo_spoof.country_code = preset.country_code.clone();
+            let _ = cfg.save();
+            let _ = code;
+        }
+
+        let spoof_tz = settings.spoof_timezone || country_code.is_some();
+        let spoof_geo = settings.spoof_geolocation || country_code.is_some();
+
+        // Disarm existing guards without restoring so original backup stays intact across hot swaps.
+        if let Some(mut old_manual) = self.manual_geo_guard.write().await.take() {
+            old_manual.disarm();
+        }
+        {
+            let mut session = self.session.write().await;
+            if let Some(ref mut s) = *session {
+                if let Some(mut old_sess) = s.geo_spoof_guard.take() {
+                    old_sess.disarm();
+                }
+            }
+        }
+
+        let mut journal = if self.geo_paths.use_systemd_tools {
+            UndoJournal::load().ok().flatten().unwrap_or_default()
+        } else {
+            UndoJournal::new()
+        };
+        let mgr = GeoSpoofManager::with_paths(self.geo_paths.clone(), self.dry_run);
+        let guard = mgr.apply(&preset, spoof_tz, spoof_geo, &mut journal)?;
+        if !self.dry_run && self.geo_paths.use_systemd_tools {
+            let _ = journal.save();
+        }
+
+        {
+            let mut session = self.session.write().await;
+            if let Some(ref mut s) = *session {
+                s.geo_spoof_guard = Some(guard);
+            } else {
+                *self.manual_geo_guard.write().await = Some(guard);
+            }
+        }
+
+        *self.applied_geo.write().await = Some((
+            preset.country_code.clone(),
+            preset.country_name.clone(),
+            preset.timezone.clone(),
+        ));
+
+        self.append_log(format!(
+            "Applied system Geo/Timezone spoof: {} ({}, {:.4}, {:.4})",
+            preset.country_name, preset.timezone, preset.latitude, preset.longitude
+        ))
+        .await;
+
+        self.get_geo_spoof_status().await
+    }
+
+    pub async fn restore_geo_spoof(&self) -> Result<serde_json::Value> {
+        {
+            let mut session = self.session.write().await;
+            if let Some(ref mut s) = *session {
+                drop(s.geo_spoof_guard.take());
+            }
+        }
+        if let Some(guard) = self.manual_geo_guard.write().await.take() {
+            drop(guard);
+        }
+
+        let mgr = GeoSpoofManager::with_paths(self.geo_paths.clone(), self.dry_run);
+        mgr.restore()?;
+        *self.applied_geo.write().await = None;
+        self.append_log("Restored original system timezone and geolocation".to_string())
+            .await;
+        self.get_geo_spoof_status().await
+    }
+
     pub async fn get_logs(&self, limit: usize) -> Result<serde_json::Value> {
         let logs = self.log_buffer.read().await;
         let count = logs.len();
@@ -942,6 +1229,30 @@ impl DaemonEngine {
     pub async fn run_doctor(&self) -> Result<serde_json::Value> {
         let report = SystemDoctor::run_diagnostics();
         Ok(serde_json::to_value(&report)?)
+    }
+}
+
+fn resolve_target_preset(
+    settings: &GeoSpoofSettings,
+    active_node: Option<&ServerNode>,
+) -> Option<GeoCountryPreset> {
+    match settings.mode {
+        GeoSpoofMode::MatchNode => {
+            if let Some(node) = active_node {
+                if !node.country_code.is_empty() && node.country_code != "UN" {
+                    if let Some(p) = find_country_preset(&node.country_code) {
+                        return Some(p);
+                    }
+                }
+                if !node.country.is_empty() {
+                    if let Some(p) = find_country_preset(&node.country) {
+                        return Some(p);
+                    }
+                }
+            }
+            find_country_preset(&settings.country_code)
+        }
+        GeoSpoofMode::Manual => find_country_preset(&settings.country_code),
     }
 }
 
@@ -1039,5 +1350,107 @@ mod tests {
 
         let ping_res = engine.ping_node(node_id).await.unwrap();
         assert_eq!(ping_res["nodeId"], node_id);
+    }
+
+    #[tokio::test]
+    async fn test_daemon_update_rule_action() {
+        let engine = DaemonEngine::new(true);
+        let rules_val = engine.list_rules().await.unwrap();
+        let first_id = rules_val.as_array().unwrap()[0]["id"].as_str().unwrap().to_string();
+        let updated = engine
+            .update_rule_action(&first_id, RuleAction::Block)
+            .await
+            .unwrap();
+        assert_eq!(updated["action"], "block");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_daemon_geo_spoof_manual_apply_and_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let geo_paths = GeoSpoofPaths::with_root(dir.path());
+        for z in &["Asia/Tehran", "Europe/Berlin", "Europe/Amsterdam"] {
+            let p = geo_paths.zoneinfo_dir.join(z);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, format!("TZif2-{z}")).unwrap();
+        }
+        std::fs::create_dir_all(geo_paths.localtime_path.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(
+            geo_paths.zoneinfo_dir.join("Asia/Tehran"),
+            &geo_paths.localtime_path,
+        )
+        .unwrap();
+        std::fs::write(&geo_paths.timezone_file_path, "Asia/Tehran\n").unwrap();
+
+        let engine = DaemonEngine::with_geo_paths(false, geo_paths.clone());
+
+        let countries = engine.list_geo_countries().await.unwrap();
+        assert!(countries.as_array().unwrap().len() >= 25);
+
+        let initial_status = engine.get_geo_spoof_status().await.unwrap();
+        assert_eq!(initial_status["activeTimezone"], "Asia/Tehran");
+        assert_eq!(initial_status["spoofActive"], false);
+
+        // Apply Germany manually
+        let applied = engine
+            .apply_geo_spoof(Some("DE".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(applied["spoofActive"], true);
+        assert_eq!(applied["activeTimezone"], "Europe/Berlin");
+        assert_eq!(applied["backedUpTimezone"], "Asia/Tehran");
+        assert_eq!(applied["appliedCountryCode"], "DE");
+        assert!(geo_paths.geolocation_path.exists());
+
+        // Restore cleanly
+        let restored = engine.restore_geo_spoof().await.unwrap();
+        assert_eq!(restored["spoofActive"], false);
+        assert_eq!(restored["activeTimezone"], "Asia/Tehran");
+        assert!(!geo_paths.geolocation_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_daemon_geo_spoof_match_node_on_connect_dry_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let geo_paths = GeoSpoofPaths::with_root(dir.path());
+        let engine = DaemonEngine::with_geo_paths(true, geo_paths);
+        {
+            let mut cfg = engine.config.write().await;
+            cfg.nodes.clear();
+            cfg.active_node_id = None;
+        }
+
+        let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality#Frankfurt%20DE";
+        let imported = engine.import_profile(uri, Some("NL Node".to_string())).await.unwrap();
+        let node_id = imported["node"]["id"].as_str().unwrap().to_string();
+        {
+            let mut cfg = engine.config.write().await;
+            if let Some(n) = cfg.nodes.iter_mut().find(|n| n.id == node_id) {
+                n.country_code = "NL".to_string();
+                n.country = "Netherlands".to_string();
+            }
+        }
+
+        let updated = engine
+            .update_geo_spoof(serde_json::json!({
+                "enabled": true,
+                "mode": "match-node",
+                "applyOnConnect": true
+            }))
+            .await
+            .unwrap();
+        assert_eq!(updated["settings"]["enabled"], true);
+        assert_eq!(updated["settings"]["mode"], "match-node");
+
+        engine.connect(Some(node_id)).await.unwrap();
+        let st_connected = engine.get_geo_spoof_status().await.unwrap();
+        assert_eq!(st_connected["spoofActive"], true);
+        assert_eq!(st_connected["appliedCountryCode"], "NL");
+        assert_eq!(st_connected["appliedTimezone"], "Europe/Amsterdam");
+
+        engine.disconnect().await.unwrap();
+        let st_disconnected = engine.get_geo_spoof_status().await.unwrap();
+        assert_eq!(st_disconnected["spoofActive"], false);
+        assert!(st_disconnected["appliedCountryCode"].is_null());
     }
 }

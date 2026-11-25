@@ -53,6 +53,27 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "50")]
         lines: usize,
     },
+    /// Manage OS Geo Location & System Timezone spoofing
+    Geo {
+        #[command(subcommand)]
+        action: GeoAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum GeoAction {
+    /// Show live timezone, geolocation, and spoofing configuration
+    Status,
+    /// List available countries with timezones and coordinates
+    Countries,
+    /// Spoof system timezone & geolocation to a target country code (e.g. DE, US, NL)
+    Set {
+        country: String,
+    },
+    /// Enable automatic country matching from active VPN server on connect
+    MatchVpn,
+    /// Restore original system timezone and geolocation immediately
+    Restore,
 }
 
 #[tokio::main]
@@ -374,6 +395,132 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        Commands::Geo { action } => match action {
+            GeoAction::Status => match client.call("getGeoSpoofStatus", serde_json::json!({})).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else {
+                        let active_tz = res.get("activeTimezone").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                        let spoof_active = res.get("spoofActive").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let country = res
+                            .get("appliedCountryName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("System Default");
+                        let backup = res.get("backedUpTimezone").and_then(|v| v.as_str());
+                        println!("{}", "GhostPath Geo & Timezone Status:".bold());
+                        println!(
+                            "  Spoofing:        {}",
+                            if spoof_active {
+                                format!("ACTIVE ({})", country).bright_green().bold()
+                            } else {
+                                "Inactive".dimmed()
+                            }
+                        );
+                        println!("  System Timezone: {}", active_tz.cyan());
+                        if let Some(orig) = backup {
+                            println!("  Original Backup: {}", orig.yellow());
+                        }
+                        if let Some(coords) = res.get("activeGeolocation").filter(|v| !v.is_null()) {
+                            let lat = coords.get("latitude").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let lon = coords.get("longitude").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            println!("  Coordinates:     {:.4}, {:.4}", lat, lon);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to query geo status: {}", "ERR".bright_red().bold(), e);
+                    std::process::exit(1);
+                }
+            },
+            GeoAction::Countries => match client.call("listGeoCountries", serde_json::json!({})).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else if let Some(list) = res.as_array() {
+                        println!("{}", "Supported Countries for Geo & Timezone Spoofing:".bold());
+                        for item in list {
+                            let code = item.get("countryCode").and_then(|v| v.as_str()).unwrap_or("-");
+                            let name = item.get("countryName").and_then(|v| v.as_str()).unwrap_or("-");
+                            let city = item.get("city").and_then(|v| v.as_str()).unwrap_or("-");
+                            let tz = item.get("timezone").and_then(|v| v.as_str()).unwrap_or("-");
+                            println!("  {}  {:<22} {:<14} {}", code.yellow().bold(), name.cyan(), city, tz.dimmed());
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to list countries: {}", "ERR".bright_red().bold(), e);
+                    std::process::exit(1);
+                }
+            },
+            GeoAction::Set { country } => {
+                match client
+                    .call("applyGeoSpoof", serde_json::json!({ "countryCode": country }))
+                    .await
+                {
+                    Ok(res) => {
+                        if cli.json {
+                            println!("{}", serde_json::to_string_pretty(&res)?);
+                        } else {
+                            let tz = res.get("activeTimezone").and_then(|v| v.as_str()).unwrap_or("-");
+                            let name = res.get("appliedCountryName").and_then(|v| v.as_str()).unwrap_or(&country);
+                            println!(
+                                "{} System geo location & timezone set to {} ({})",
+                                "OK".bright_green().bold(),
+                                name.cyan(),
+                                tz.yellow()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{} Failed to set geo location: {}", "ERR".bright_red().bold(), e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            GeoAction::MatchVpn => {
+                match client
+                    .call(
+                        "updateGeoSpoof",
+                        serde_json::json!({ "enabled": true, "mode": "match-node", "applyOnConnect": true }),
+                    )
+                    .await
+                {
+                    Ok(res) => {
+                        if cli.json {
+                            println!("{}", serde_json::to_string_pretty(&res)?);
+                        } else {
+                            println!(
+                                "{} Enabled auto-matching system timezone & geolocation to connected VPN country",
+                                "OK".bright_green().bold()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{} Failed to update geo mode: {}", "ERR".bright_red().bold(), e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            GeoAction::Restore => match client.call("restoreGeoSpoof", serde_json::json!({})).await {
+                Ok(res) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string_pretty(&res)?);
+                    } else {
+                        let tz = res.get("activeTimezone").and_then(|v| v.as_str()).unwrap_or("-");
+                        println!(
+                            "{} Restored original system timezone ({}) and cleared GeoClue override",
+                            "OK".bright_green().bold(),
+                            tz.cyan()
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to restore geo state: {}", "ERR".bright_red().bold(), e);
+                    std::process::exit(1);
+                }
+            },
+        },
     }
 
     Ok(())

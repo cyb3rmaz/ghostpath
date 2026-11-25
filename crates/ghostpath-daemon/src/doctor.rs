@@ -31,6 +31,7 @@ impl SystemDoctor {
             Self::check_docker(),
             Self::check_ipv6(),
             Self::check_amneziawg_engine(),
+            Self::check_geo_timezone_support(),
             Self::check_conflicting_vpn_interfaces(),
         ];
 
@@ -284,6 +285,32 @@ impl SystemDoctor {
             },
             fix: if !passed {
                 Some("Install ghostpath-vpn package with bundled amneziawg-go, or place amneziawg-go into /usr/bin/amneziawg-go".to_string())
+            } else {
+                None
+            },
+        }
+    }
+
+    fn check_geo_timezone_support() -> DoctorCheck {
+        let mgr = ghostpath_net::GeoSpoofManager::new(true);
+        let (has_timedatectl, has_geoclue) = mgr.detect_capabilities();
+        let active_tz = mgr.read_active_timezone();
+        let zoneinfo_ok = Path::new("/usr/share/zoneinfo").exists();
+        let passed = zoneinfo_ok || has_timedatectl;
+
+        DoctorCheck {
+            id: "geo_timezone".to_string(),
+            name: "System Timezone & GeoClue Spoofing".to_string(),
+            passed,
+            severity: "info".to_string(),
+            details: format!(
+                "Active TZ: {}; timedatectl: {}; GeoClue2: {}",
+                active_tz,
+                if has_timedatectl { "ready" } else { "fallback (/etc/localtime)" },
+                if has_geoclue { "ready (/etc/geolocation)" } else { "not installed (timezone spoofing still works)" }
+            ),
+            fix: if !has_geoclue {
+                Some("Optional for desktop GPS/browser geolocation spoofing: sudo apt install geoclue-2.0".to_string())
             } else {
                 None
             },

@@ -20,6 +20,7 @@ NoNewPrivileges=true
 
 # Sandboxing & isolation
 ProtectSystem=strict
+ReadWritePaths=-/etc/localtime -/etc/timezone -/etc/geolocation -/etc/geoclue/conf.d -/etc/resolv.conf
 ProtectHome=read-only
 PrivateTmp=true
 ProtectControlGroups=true
