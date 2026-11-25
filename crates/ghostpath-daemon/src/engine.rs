@@ -266,11 +266,7 @@ impl DaemonEngine {
                     };
 
                     // 6. Launch proxy core supervisor
-                    let mut effective_rules = if config.rules.is_empty() {
-                        ghostpath_core::rules::default_routing_rules()
-                    } else {
-                        config.rules.clone()
-                    };
+                    let mut effective_rules = config.rules.clone();
                     if config.settings.geo_spoof.enabled && config.settings.geo_spoof.strict_geo_routing {
                         for rule in &mut effective_rules {
                             if rule.action == RuleAction::Direct
@@ -968,12 +964,7 @@ impl DaemonEngine {
 
     pub async fn list_rules(&self) -> Result<serde_json::Value> {
         let config = self.config.read().await;
-        let rules = if config.rules.is_empty() {
-            ghostpath_core::rules::default_routing_rules()
-        } else {
-            config.rules.clone()
-        };
-        Ok(serde_json::to_value(&rules)?)
+        Ok(serde_json::to_value(&config.rules)?)
     }
 
     pub async fn add_rule(&self, mut rule_val: serde_json::Value) -> Result<serde_json::Value> {
@@ -987,9 +978,6 @@ impl DaemonEngine {
         }
         let rule: ghostpath_core::models::RoutingRule = serde_json::from_value(rule_val)?;
         let mut config = self.config.write().await;
-        if config.rules.is_empty() {
-            config.rules = ghostpath_core::rules::default_routing_rules();
-        }
         config.rules.push(rule.clone());
         let _ = config.save();
         Ok(serde_json::to_value(&rule)?)
@@ -997,9 +985,6 @@ impl DaemonEngine {
 
     pub async fn delete_rule(&self, id: &str) -> Result<serde_json::Value> {
         let mut config = self.config.write().await;
-        if config.rules.is_empty() {
-            config.rules = ghostpath_core::rules::default_routing_rules();
-        }
         config.rules.retain(|r| r.id != id);
         let _ = config.save();
         Ok(serde_json::json!({ "deleted": id }))
@@ -1007,9 +992,6 @@ impl DaemonEngine {
 
     pub async fn toggle_rule(&self, id: &str) -> Result<serde_json::Value> {
         let mut config = self.config.write().await;
-        if config.rules.is_empty() {
-            config.rules = ghostpath_core::rules::default_routing_rules();
-        }
         let mut new_state = true;
         if let Some(r) = config.rules.iter_mut().find(|r| r.id == id) {
             r.enabled = !r.enabled;
@@ -1025,9 +1007,6 @@ impl DaemonEngine {
         action: RuleAction,
     ) -> Result<serde_json::Value> {
         let mut config = self.config.write().await;
-        if config.rules.is_empty() {
-            config.rules = ghostpath_core::rules::default_routing_rules();
-        }
         if let Some(r) = config.rules.iter_mut().find(|r| r.id == id) {
             r.action = action;
         } else {
@@ -1308,13 +1287,13 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_rules_management() {
         let engine = DaemonEngine::new(true);
+        {
+            let mut cfg = engine.config.write().await;
+            cfg.rules.clear();
+        }
         let rules_val = engine.list_rules().await.unwrap();
         let rules = rules_val.as_array().unwrap();
-        assert!(!rules.is_empty(), "Default rules should be seeded");
-
-        let first_id = rules[0]["id"].as_str().unwrap();
-        let toggled = engine.toggle_rule(first_id).await.unwrap();
-        assert_eq!(toggled["id"], first_id);
+        assert!(rules.is_empty(), "Fresh install must have no sample routing rules");
 
         let new_rule = serde_json::json!({
             "name": "Custom Test Rule",
@@ -1328,6 +1307,10 @@ mod tests {
         });
         let added = engine.add_rule(new_rule).await.unwrap();
         let added_id = added["id"].as_str().unwrap();
+
+        let toggled = engine.toggle_rule(added_id).await.unwrap();
+        assert_eq!(toggled["id"], added_id);
+        assert_eq!(toggled["enabled"], false);
 
         let rules_after_add = engine.list_rules().await.unwrap();
         assert!(rules_after_add.as_array().unwrap().iter().any(|r| r["id"] == added_id));
@@ -1355,10 +1338,19 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_update_rule_action() {
         let engine = DaemonEngine::new(true);
-        let rules_val = engine.list_rules().await.unwrap();
-        let first_id = rules_val.as_array().unwrap()[0]["id"].as_str().unwrap().to_string();
+        let added = engine
+            .add_rule(serde_json::json!({
+                "ruleType": "domain",
+                "pattern": "example.org",
+                "action": "proxy",
+                "enabled": true,
+                "note": "Test"
+            }))
+            .await
+            .unwrap();
+        let rule_id = added["id"].as_str().unwrap().to_string();
         let updated = engine
-            .update_rule_action(&first_id, RuleAction::Block)
+            .update_rule_action(&rule_id, RuleAction::Block)
             .await
             .unwrap();
         assert_eq!(updated["action"], "block");

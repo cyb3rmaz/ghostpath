@@ -555,7 +555,9 @@ export const RoutingView: React.FC<RoutingViewProps> = ({
         <section className="rounded-xl bg-[#1A1C20] border border-[#292D34] divide-y divide-[#24272D] overflow-hidden">
           {visibleRules.length === 0 ? (
             <div className="px-5 py-8 text-center text-xs text-[#7E8691]">
-              No routing rules match this filter.
+              {rules.length === 0
+                ? 'No routing rules configured yet. Add a domain, process, or CIDR rule above.'
+                : 'No routing rules match this filter.'}
             </div>
           ) : (
             visibleRules.map((rule) => (
