@@ -128,7 +128,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
         {/* Connection Control Card */}
         <section
           aria-label="Tunnel connection control"
-          className="xl:col-span-5 rounded-xl bg-[#101512] border border-[#1D2721] p-6 flex flex-col justify-between"
+          className="xl:col-span-5 rounded-xl bg-[#1A1C20] border border-[#292D34] p-6 flex flex-col justify-between"
         >
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -138,7 +138,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                 ) : isConnecting ? (
                   <Loader2 className="w-4 h-4 text-[#FBBF24] animate-spin" />
                 ) : (
-                  <ShieldOff className="w-4 h-4 text-[#78887F]" />
+                  <ShieldOff className="w-4 h-4 text-[#7E8691]" />
                 )}
                 <span
                   className={
@@ -146,7 +146,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       ? 'text-[#22C55E]'
                       : isConnecting
                         ? 'text-[#FBBF24]'
-                        : 'text-[#8A9990]'
+                        : 'text-[#959CA6]'
                   }
                 >
                   {isConnected
@@ -156,10 +156,10 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       : 'Tunnel Disconnected'}
                 </span>
               </div>
-              <h2 className="text-xl font-semibold text-[#ECF2EE] mt-2 tracking-tight">
+              <h2 className="text-xl font-semibold text-[#F1F3F5] mt-2 tracking-tight">
                 {activeNode ? activeNode.name : 'No Server Profile Selected'}
               </h2>
-              <p className="text-xs text-[#8A9990] mt-1 font-mono tabular-nums">
+              <p className="text-xs text-[#959CA6] mt-1 font-mono tabular-nums">
                 {activeNode
                   ? `${activeNode.protocol} · ${activeNode.security} · ${activeNode.host}:${activeNode.port}`
                   : 'Import a subscription or server URI to connect'}
@@ -167,8 +167,8 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             </div>
 
             <div className="text-right shrink-0">
-              <div className="text-xs text-[#78887F]">Session</div>
-              <div className="text-sm font-mono tabular-nums text-[#ECF2EE] mt-0.5">
+              <div className="text-xs text-[#7E8691]">Session</div>
+              <div className="text-sm font-mono tabular-nums text-[#F1F3F5] mt-0.5">
                 {formatDuration(sessionSeconds)}
               </div>
             </div>
@@ -181,12 +181,12 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
               onClick={onToggleConnect}
               disabled={isConnecting || !activeNode}
               aria-label={isConnected ? 'Disconnect VPN tunnel' : 'Connect VPN tunnel'}
-              className={`group relative w-32 h-32 rounded-full flex flex-col items-center justify-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#101512] ${
+              className={`group relative w-32 h-32 rounded-full flex flex-col items-center justify-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1A1C20] ${
                 isConnected
                   ? 'bg-[#22C55E]/15 border-2 border-[#22C55E] text-[#22C55E] shadow-[0_0_32px_rgba(34,197,94,0.18)] hover:bg-[#22C55E]/20'
                   : isConnecting
                     ? 'bg-[#FBBF24]/10 border-2 border-[#FBBF24]/60 text-[#FBBF24] cursor-wait'
-                    : 'bg-[#151C18] border-2 border-[#27352D] text-[#ECF2EE] hover:border-[#22C55E]/70 hover:text-[#22C55E]'
+                    : 'bg-[#202328] border-2 border-[#343942] text-[#F1F3F5] hover:border-[#22C55E]/70 hover:text-[#22C55E]'
               }`}
             >
               {isConnecting ? (
@@ -201,10 +201,10 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
           </div>
 
           {/* Routing & Interface Mode Segmented Controls */}
-          <div className="space-y-3 pt-4 border-t border-[#1A231E]">
+          <div className="space-y-3 pt-4 border-t border-[#272A30]">
             <div className="flex items-center justify-between gap-4">
-              <span className="text-xs text-[#8A9990] whitespace-nowrap">Routing Mode</span>
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-[#0A0D0B] border border-[#1B241F]">
+              <span className="text-xs text-[#959CA6] whitespace-nowrap">Routing Mode</span>
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-[#131518] border border-[#272A30]">
                 {(['rule', 'global', 'direct'] as RoutingMode[]).map((mode) => (
                   <button
                     key={mode}
@@ -212,8 +212,8 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                     onClick={() => onChangeRoutingMode(mode)}
                     className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors whitespace-nowrap ${
                       routingMode === mode
-                        ? 'bg-[#22C55E] text-[#05140A] font-semibold'
-                        : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                        ? 'bg-[#22C55E] text-[#07140B] font-semibold'
+                        : 'text-[#959CA6] hover:text-[#F1F3F5]'
                     }`}
                   >
                     {mode}
@@ -223,15 +223,15 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between gap-4">
-              <span className="text-xs text-[#8A9990] whitespace-nowrap">Interface</span>
-              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#0A0D0B] border border-[#1B241F]">
+              <span className="text-xs text-[#959CA6] whitespace-nowrap">Interface</span>
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#131518] border border-[#272A30]">
                 <button
                   type="button"
                   onClick={() => onChangeInterfaceMode('tun')}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                     interfaceMode === 'tun'
-                      ? 'bg-[#19241E] text-[#22C55E] border border-[#283B30]'
-                      : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                      ? 'bg-[#252930] text-[#F1F3F5] border border-[#22C55E]/70'
+                      : 'text-[#959CA6] border border-transparent hover:text-[#F1F3F5]'
                   }`}
                 >
                   TUN ({activeNode?.protocol === 'AmneziaWG' || activeNode?.protocol === 'WireGuard' ? 'awg-ghost0' : 'ghost0'})
@@ -241,8 +241,8 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                   onClick={() => onChangeInterfaceMode('system-proxy')}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                     interfaceMode === 'system-proxy'
-                      ? 'bg-[#19241E] text-[#22C55E] border border-[#283B30]'
-                      : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                      ? 'bg-[#252930] text-[#F1F3F5] border border-[#22C55E]/70'
+                      : 'text-[#959CA6] border border-transparent hover:text-[#F1F3F5]'
                   }`}
                 >
                   System Proxy
@@ -255,40 +255,40 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
         {/* Live Telemetry & Interface Metrics Card */}
         <section
           aria-label="Live interface throughput"
-          className="xl:col-span-7 rounded-xl bg-[#101512] border border-[#1D2721] p-6 flex flex-col justify-between"
+          className="xl:col-span-7 rounded-xl bg-[#1A1C20] border border-[#292D34] p-6 flex flex-col justify-between"
         >
           <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
             <div>
-              <div className="flex items-center gap-2 text-xs text-[#8A9990]">
+              <div className="flex items-center gap-2 text-xs text-[#959CA6]">
                 <Activity className="w-3.5 h-3.5 text-[#22C55E]" />
                 <span>Interface Throughput</span>
               </div>
               <div className="flex flex-wrap items-baseline gap-6 mt-2">
                 <div className="flex items-baseline gap-2">
                   <ArrowDown className="w-3.5 h-3.5 text-[#22C55E]" />
-                  <span className="text-2xl font-semibold font-mono tabular-nums text-[#ECF2EE]">
+                  <span className="text-2xl font-semibold font-mono tabular-nums text-[#F1F3F5]">
                     {downloadMbps.toFixed(1)}
                   </span>
-                  <span className="text-xs text-[#8A9990]">Mbps down</span>
+                  <span className="text-xs text-[#959CA6]">Mbps down</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <ArrowUp className="w-3.5 h-3.5 text-[#7D8E84]" />
-                  <span className="text-2xl font-semibold font-mono tabular-nums text-[#ECF2EE]">
+                  <ArrowUp className="w-3.5 h-3.5 text-[#858D98]" />
+                  <span className="text-2xl font-semibold font-mono tabular-nums text-[#F1F3F5]">
                     {uploadMbps.toFixed(1)}
                   </span>
-                  <span className="text-xs text-[#8A9990]">Mbps up</span>
+                  <span className="text-xs text-[#959CA6]">Mbps up</span>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-6 text-xs font-mono tabular-nums">
               <div>
-                <div className="text-[#78887F]">Session RX</div>
-                <div className="text-[#ECF2EE] mt-0.5">{formatDataSize(totalDownMb)}</div>
+                <div className="text-[#7E8691]">Session RX</div>
+                <div className="text-[#F1F3F5] mt-0.5">{formatDataSize(totalDownMb)}</div>
               </div>
               <div>
-                <div className="text-[#78887F]">Session TX</div>
-                <div className="text-[#ECF2EE] mt-0.5">{formatDataSize(totalUpMb)}</div>
+                <div className="text-[#7E8691]">Session TX</div>
+                <div className="text-[#F1F3F5] mt-0.5">{formatDataSize(totalUpMb)}</div>
               </div>
             </div>
           </div>
@@ -296,25 +296,25 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
           <ThroughputChart data={trafficHistory} isConnected={isConnected} />
 
           {/* Clean Unboxed Interface Summary Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 mt-4 border-t border-[#1A231E] text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 mt-4 border-t border-[#272A30] text-xs">
             <div>
-              <div className="text-[#78887F]">Engine</div>
-              <div className="font-mono text-[#ECF2EE] mt-0.5">{coreEngine}</div>
+              <div className="text-[#7E8691]">Engine</div>
+              <div className="font-mono text-[#F1F3F5] mt-0.5">{coreEngine}</div>
             </div>
             <div>
-              <div className="text-[#78887F]">Local Bind</div>
-              <div className="font-mono tabular-nums text-[#ECF2EE] mt-0.5">
+              <div className="text-[#7E8691]">Local Bind</div>
+              <div className="font-mono tabular-nums text-[#F1F3F5] mt-0.5">
                 {interfaceMode === 'tun' ? '10.8.0.2 (ghost0)' : `127.0.0.1:${socksPort}`}
               </div>
             </div>
             <div>
-              <div className="text-[#78887F]">Exit IPv4</div>
-              <div className="font-mono tabular-nums text-[#ECF2EE] mt-0.5">
+              <div className="text-[#7E8691]">Exit IPv4</div>
+              <div className="font-mono tabular-nums text-[#F1F3F5] mt-0.5">
                 {isConnected && activeNode ? activeNode.host : 'Disconnected'}
               </div>
             </div>
             <div>
-              <div className="text-[#78887F]">Node Latency</div>
+              <div className="text-[#7E8691]">Node Latency</div>
               <div
                 className={`font-mono tabular-nums mt-0.5 ${
                   getLatencyTone(activeNode?.latencyMs ?? null).color
@@ -330,22 +330,22 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
       {/* Server Nodes Section */}
       <section
         aria-label="Server nodes"
-        className="rounded-xl bg-[#101512] border border-[#1D2721] overflow-hidden"
+        className="rounded-xl bg-[#1A1C20] border border-[#292D34] overflow-hidden"
       >
         {/* Toolbar */}
-        <div className="p-5 border-b border-[#1A231E] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="p-5 border-b border-[#272A30] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-base font-semibold text-[#ECF2EE] mr-2">Server Nodes</h3>
+            <h3 className="text-base font-semibold text-[#F1F3F5] mr-2">Server Nodes</h3>
 
             {/* Subscription Filter */}
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#0A0D0B] border border-[#1B241F]">
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#131518] border border-[#272A30]">
               <button
                 type="button"
                 onClick={() => setSelectedSubFilter('all')}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                   selectedSubFilter === 'all'
-                    ? 'bg-[#19241E] text-[#ECF2EE]'
-                    : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                    ? 'bg-[#252930] text-[#F1F3F5]'
+                    : 'text-[#959CA6] hover:text-[#F1F3F5]'
                 }`}
               >
                 All ({nodes.length})
@@ -357,8 +357,8 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                   onClick={() => setSelectedSubFilter(sub.id)}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap max-w-[160px] truncate ${
                     selectedSubFilter === sub.id
-                      ? 'bg-[#19241E] text-[#ECF2EE]'
-                      : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                      ? 'bg-[#252930] text-[#F1F3F5]'
+                      : 'text-[#959CA6] hover:text-[#F1F3F5]'
                   }`}
                 >
                   {sub.name}
@@ -370,13 +370,13 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
           <div className="flex flex-wrap items-center gap-3">
             {/* Protocol Filter */}
             <div className="flex items-center gap-1.5">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-[#78887F]" />
+              <SlidersHorizontal className="w-3.5 h-3.5 text-[#7E8691]" />
               <div className="relative">
                 <select
                   aria-label="Filter by protocol"
                   value={protocolFilter}
                   onChange={(e) => setProtocolFilter(e.target.value as 'all' | NodeProtocol)}
-                  className="appearance-none pl-2.5 pr-7 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] focus:outline-none focus:border-[#22C55E]"
+                  className="appearance-none pl-2.5 pr-7 py-1.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs text-[#F1F3F5] focus:outline-none focus:border-[#22C55E]"
                 >
                   <option value="all">All Protocols</option>
                   <option value="AmneziaWG">AmneziaWG</option>
@@ -387,20 +387,20 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                   <option value="VMess">VMess</option>
                   <option value="Shadowsocks">Shadowsocks</option>
                 </select>
-                <ChevronDown className="w-3 h-3 text-[#8A9990] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#959CA6] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
 
             {/* Search */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-[#78887F] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-[#7E8691] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search city, country, IP..."
                 aria-label="Search server nodes"
-                className="w-52 pl-8 pr-3 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E]"
+                className="w-52 pl-8 pr-3 py-1.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs text-[#F1F3F5] placeholder-[#606772] focus:outline-none focus:border-[#22C55E]"
               />
             </div>
 
@@ -409,7 +409,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
               type="button"
               onClick={onPingAll}
               disabled={isPingingAll}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#161F1A] border border-[#233028] text-xs font-medium text-[#ECF2EE] hover:border-[#22C55E]/60 hover:text-[#22C55E] transition-colors disabled:opacity-60 whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#22252A] border border-[#30353D] text-xs font-medium text-[#F1F3F5] hover:border-[#22C55E]/60 hover:text-[#22C55E] transition-colors disabled:opacity-60 whitespace-nowrap"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isPingingAll ? 'animate-spin text-[#22C55E]' : ''}`} />
               {isPingingAll ? 'Testing...' : 'Ping All'}
@@ -418,20 +418,20 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
         </div>
 
         {/* High-Density Node Table */}
-        <div className="divide-y divide-[#17201B]">
+        <div className="divide-y divide-[#24272D]">
           {nodes.length === 0 ? (
             <div className="py-12 px-6 text-center">
-              <Globe className="w-8 h-8 text-[#4F5E55] mx-auto mb-2" />
-              <p className="text-sm font-medium text-[#ECF2EE]">No server profiles yet</p>
-              <p className="text-xs text-[#8A9990] mt-1">
+              <Globe className="w-8 h-8 text-[#565C66] mx-auto mb-2" />
+              <p className="text-sm font-medium text-[#F1F3F5]">No server profiles yet</p>
+              <p className="text-xs text-[#959CA6] mt-1">
                 Import a subscription or server URI (vless://, vmess://, trojan://, ss://) to begin.
               </p>
             </div>
           ) : filteredNodes.length === 0 ? (
             <div className="py-12 px-6 text-center">
-              <Globe className="w-8 h-8 text-[#4F5E55] mx-auto mb-2" />
-              <p className="text-sm font-medium text-[#ECF2EE]">No matching server nodes</p>
-              <p className="text-xs text-[#8A9990] mt-1">
+              <Globe className="w-8 h-8 text-[#565C66] mx-auto mb-2" />
+              <p className="text-sm font-medium text-[#F1F3F5]">No matching server nodes</p>
+              <p className="text-xs text-[#959CA6] mt-1">
                 Adjust your search query or protocol filter to view available endpoints.
               </p>
             </div>
@@ -451,10 +451,10 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       onSelectNode(node.id);
                     }
                   }}
-                  className={`flex items-center justify-between gap-4 px-5 py-3.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-[#17221C] ${
+                  className={`flex items-center justify-between gap-4 px-5 py-3.5 cursor-pointer transition-colors focus-visible:outline-none focus-visible:bg-[#1D2D23] ${
                     isSelected
-                      ? 'bg-[#142019] hover:bg-[#16251D]'
-                      : 'hover:bg-[#141B17]'
+                      ? 'bg-[#19261E] hover:bg-[#1D2D23]'
+                      : 'hover:bg-[#1F2227]'
                   }`}
                 >
                   <div className="flex items-center gap-4 min-w-0">
@@ -462,7 +462,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       className={`w-8 h-8 rounded-md flex items-center justify-center font-mono text-xs font-semibold shrink-0 border ${
                         isSelected
                           ? 'bg-[#22C55E]/15 border-[#22C55E]/50 text-[#22C55E]'
-                          : 'bg-[#0C100E] border-[#1E2822] text-[#9AA8A0]'
+                          : 'bg-[#141619] border-[#2A2E35] text-[#A1A7B0]'
                       }`}
                     >
                       {node.countryCode}
@@ -471,7 +471,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                       <div className="flex items-center gap-2">
                         <span
                           className={`text-sm font-medium truncate ${
-                            isSelected ? 'text-[#22C55E]' : 'text-[#ECF2EE]'
+                            isSelected ? 'text-[#22C55E]' : 'text-[#F1F3F5]'
                           }`}
                         >
                           {node.name}
@@ -480,7 +480,7 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                           <Check className="w-3.5 h-3.5 text-[#22C55E] shrink-0" aria-label="Active node" />
                         )}
                       </div>
-                      <div className="text-xs text-[#7D8C84] truncate mt-0.5">
+                      <div className="text-xs text-[#858D98] truncate mt-0.5">
                         {node.protocol} · {node.transport} · {node.security} · {node.city}
                       </div>
                     </div>
@@ -488,10 +488,10 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
 
                   <div className="flex items-center gap-6 shrink-0">
                     <div className="hidden md:block text-right">
-                      <div className="text-xs font-mono tabular-nums text-[#8A9990]">
+                      <div className="text-xs font-mono tabular-nums text-[#959CA6]">
                         {node.host}:{node.port}
                       </div>
-                      <div className="text-[11px] font-mono tabular-nums text-[#67766E]">
+                      <div className="text-[11px] font-mono tabular-nums text-[#717883]">
                         Load {node.loadPercent}%
                       </div>
                     </div>
@@ -503,10 +503,10 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
                         onPingNode(node.id);
                       }}
                       title="Test node latency"
-                      className="min-w-[72px] text-right px-2.5 py-1 rounded-md hover:bg-[#1B2520] transition-colors font-mono text-xs tabular-nums"
+                      className="min-w-[72px] text-right px-2.5 py-1 rounded-md hover:bg-[#282C33] transition-colors font-mono text-xs tabular-nums"
                     >
                       {node.pinging ? (
-                        <span className="text-[#8A9990]">...</span>
+                        <span className="text-[#959CA6]">...</span>
                       ) : (
                         <span className={latency.color}>{latency.text}</span>
                       )}

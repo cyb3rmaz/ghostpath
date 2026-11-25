@@ -17,8 +17,8 @@
   body {
     color-scheme: dark;
     font-family: var(--font-sans);
-    background-color: #090C0A;
-    color: #ECF2EE;
+    background-color: #111315;
+    color: #F1F3F5;
     letter-spacing: 0.01em;
   }
 
@@ -26,8 +26,8 @@
   select option,
   select optgroup {
     color-scheme: dark;
-    background-color: #0A0D0B;
-    color: #ECF2EE;
+    background-color: #131518;
+    color: #F1F3F5;
   }
 
   h1,
@@ -49,12 +49,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1F2A24;
+  background: #2E323A;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2D3D34;
+  background: #3D424D;
 }
 
 @media (prefers-reduced-motion: reduce) {

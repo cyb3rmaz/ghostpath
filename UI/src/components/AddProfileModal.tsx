@@ -138,20 +138,20 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
       aria-modal="true"
       aria-labelledby="import-modal-title"
     >
-      <div className="w-full max-w-lg rounded-xl bg-[#101512] border border-[#212D26] shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1B241F]">
+      <div className="w-full max-w-lg rounded-xl bg-[#1A1C20] border border-[#2E323A] shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#272A30]">
           <div>
-            <h2 id="import-modal-title" className="text-base font-semibold text-[#ECF2EE]">
+            <h2 id="import-modal-title" className="text-base font-semibold text-[#F1F3F5]">
               Import Configuration
             </h2>
-            <p className="text-xs text-[#8A9990] mt-0.5">
+            <p className="text-xs text-[#959CA6] mt-0.5">
               Subscribe to a remote profile URL or import a single node URI
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg text-[#8A9990] hover:text-[#ECF2EE] hover:bg-[#18201B] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]"
+            className="p-2 rounded-lg text-[#959CA6] hover:text-[#F1F3F5] hover:bg-[#24272D] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22C55E]"
             aria-label="Close import modal"
           >
             <X className="w-4 h-4" />
@@ -159,7 +159,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
         </div>
 
         <div className="px-6 pt-4">
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#0A0D0B] border border-[#1B241F]">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#131518] border border-[#272A30]">
             <button
               type="button"
               onClick={() => {
@@ -168,8 +168,8 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
               }}
               className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                 mode === 'subscription'
-                  ? 'bg-[#17201B] text-[#ECF2EE] border border-[#26352C]'
-                  : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                  ? 'bg-[#24272D] text-[#F1F3F5] border border-[#333841]'
+                  : 'text-[#959CA6] hover:text-[#F1F3F5]'
               }`}
             >
               <Link2 className="w-3.5 h-3.5" />
@@ -183,8 +183,8 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
               }}
               className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                 mode === 'uri'
-                  ? 'bg-[#17201B] text-[#ECF2EE] border border-[#26352C]'
-                  : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                  ? 'bg-[#24272D] text-[#F1F3F5] border border-[#333841]'
+                  : 'text-[#959CA6] hover:text-[#F1F3F5]'
               }`}
             >
               <Terminal className="w-3.5 h-3.5" />
@@ -197,7 +197,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
           {mode === 'subscription' ? (
             <>
               <div>
-                <label className="block text-xs font-medium text-[#B3C0B8] mb-1.5" htmlFor="sub-name">
+                <label className="block text-xs font-medium text-[#B8BEC6] mb-1.5" htmlFor="sub-name">
                   Profile Name (Optional)
                 </label>
                 <input
@@ -206,12 +206,12 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                   value={subName}
                   onChange={(e) => setSubName(e.target.value)}
                   placeholder="e.g. My VPN Subscription"
-                  className="w-full px-3.5 py-2.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-sm text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E]"
+                  className="w-full px-3.5 py-2.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-sm text-[#F1F3F5] placeholder-[#606772] focus:outline-none focus:border-[#22C55E]"
                 />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-medium text-[#B3C0B8]" htmlFor="sub-url">
+                  <label className="block text-xs font-medium text-[#B8BEC6]" htmlFor="sub-url">
                     Subscription Endpoint
                   </label>
                   <button
@@ -230,14 +230,14 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                   value={subUrl}
                   onChange={(e) => setSubUrl(e.target.value)}
                   placeholder="https://example.com/api/v1/subscribe?token=..."
-                  className="w-full px-3.5 py-2.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs font-mono text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E]"
+                  className="w-full px-3.5 py-2.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs font-mono text-[#F1F3F5] placeholder-[#606772] focus:outline-none focus:border-[#22C55E]"
                 />
               </div>
             </>
           ) : (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-medium text-[#B3C0B8]" htmlFor="raw-uri">
+                <label className="block text-xs font-medium text-[#B8BEC6]" htmlFor="raw-uri">
                   Share Link / Config (vless://, vmess://, vpn://, .conf)
                 </label>
                 <div className="flex items-center gap-3">
@@ -251,7 +251,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-1.5 text-xs text-[#8A9990] hover:text-[#ECF2EE] transition-colors"
+                    className="inline-flex items-center gap-1.5 text-xs text-[#959CA6] hover:text-[#F1F3F5] transition-colors"
                   >
                     <FileCode className="w-3.5 h-3.5" />
                     Browse File
@@ -273,7 +273,7 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
                 value={rawUri}
                 onChange={(e) => setRawUri(e.target.value)}
                 placeholder="vless://... or vpn://... or paste [Interface] / [Peer] WireGuard config"
-                className="w-full px-3.5 py-2.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs font-mono text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E] resize-none"
+                className="w-full px-3.5 py-2.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs font-mono text-[#F1F3F5] placeholder-[#606772] focus:outline-none focus:border-[#22C55E] resize-none"
               />
             </div>
           )}
@@ -314,14 +314,14 @@ export const AddProfileModal: React.FC<AddProfileModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="px-4 py-2 rounded-lg text-xs font-medium text-[#98A69E] hover:text-[#ECF2EE] hover:bg-[#18201B] transition-colors"
+              className="px-4 py-2 rounded-lg text-xs font-medium text-[#9EA5AE] hover:text-[#F1F3F5] hover:bg-[#24272D] transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-[#22C55E] text-[#05140A] hover:bg-[#16A34A] transition-colors disabled:opacity-60"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-[#22C55E] text-[#07140B] hover:bg-[#16A34A] transition-colors disabled:opacity-60"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {mode === 'subscription' ? 'Fetch & Import' : 'Add Node'}

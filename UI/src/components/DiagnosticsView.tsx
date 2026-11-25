@@ -62,11 +62,11 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* DNS & Leak Verification Panel */}
-      <section className="rounded-xl bg-[#101512] border border-[#1D2721] p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#1A231E]">
+      <section className="rounded-xl bg-[#1A1C20] border border-[#292D34] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#272A30]">
           <div>
-            <h2 className="text-base font-semibold text-[#ECF2EE]">DNS & Leak Verification</h2>
-            <p className="text-xs text-[#8A9990] mt-0.5">
+            <h2 className="text-base font-semibold text-[#F1F3F5]">DNS & Leak Verification</h2>
+            <p className="text-xs text-[#959CA6] mt-0.5">
               Inspect active outbound IPv4, WebRTC, and encrypted DNS resolver posture
             </p>
           </div>
@@ -74,7 +74,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
             type="button"
             onClick={handleRunLeakCheck}
             disabled={leakChecking}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#161F1A] border border-[#233028] text-xs font-medium text-[#ECF2EE] hover:border-[#22C55E]/60 hover:text-[#22C55E] transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#22252A] border border-[#30353D] text-xs font-medium text-[#F1F3F5] hover:border-[#22C55E]/60 hover:text-[#22C55E] transition-colors whitespace-nowrap"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-[#22C55E]" />
             {leakChecking ? 'Probing Resolvers...' : 'Run Leak Check'}
@@ -83,37 +83,37 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-4 text-xs">
           <div>
-            <div className="text-[#78887F]">Public Egress IP</div>
-            <div className="font-mono tabular-nums text-[#ECF2EE] mt-1">
+            <div className="text-[#7E8691]">Public Egress IP</div>
+            <div className="font-mono tabular-nums text-[#F1F3F5] mt-1">
               {isConnected && activeNode ? activeNode.host : 'Not Connected'}
             </div>
           </div>
           <div>
-            <div className="text-[#78887F]">DNS Resolver</div>
-            <div className="font-mono text-[#ECF2EE] mt-1 truncate">{dnsPrimary}</div>
+            <div className="text-[#7E8691]">DNS Resolver</div>
+            <div className="font-mono text-[#F1F3F5] mt-1 truncate">{dnsPrimary}</div>
           </div>
           <div>
-            <div className="text-[#78887F]">IPv6 Leak Protection</div>
+            <div className="text-[#7E8691]">IPv6 Leak Protection</div>
             <div className="font-medium text-[#22C55E] mt-1">
               AAAA Suppressed
             </div>
           </div>
           <div>
-            <div className="text-[#78887F]">Last Verification</div>
-            <div className="font-mono tabular-nums text-[#ECF2EE] mt-1">{leakCheckedAt}</div>
+            <div className="text-[#7E8691]">Last Verification</div>
+            <div className="font-mono tabular-nums text-[#F1F3F5] mt-1">{leakCheckedAt}</div>
           </div>
         </div>
 
         {doctorChecks.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-[#1A231E]">
-            <div className="text-xs font-semibold text-[#ECF2EE] mb-2">Host Doctor Checks:</div>
+          <div className="mt-4 pt-4 border-t border-[#272A30]">
+            <div className="text-xs font-semibold text-[#F1F3F5] mb-2">Host Doctor Checks:</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {doctorChecks.map((chk) => (
                 <div
                   key={chk.id}
                   className={`p-2 rounded border text-xs flex items-center justify-between ${
                     chk.passed
-                      ? 'bg-[#121B15] border-[#22C55E]/30 text-[#4ADE80]'
+                      ? 'bg-[#17251C] border-[#22C55E]/30 text-[#4ADE80]'
                       : 'bg-[#1C1212] border-[#EF4444]/30 text-[#FCA5A5]'
                   }`}
                 >
@@ -127,11 +127,11 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
       </section>
 
       {/* Core Kernel & Router Logs */}
-      <section className="rounded-xl bg-[#101512] border border-[#1D2721] overflow-hidden">
-        <div className="p-5 border-b border-[#1A231E] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <section className="rounded-xl bg-[#1A1C20] border border-[#292D34] overflow-hidden">
+        <div className="p-5 border-b border-[#272A30] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-base font-semibold text-[#ECF2EE]">Core Journal</h3>
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#0A0D0B] border border-[#1B241F]">
+            <h3 className="text-base font-semibold text-[#F1F3F5]">Core Journal</h3>
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-[#131518] border border-[#272A30]">
               {(['all', 'info', 'warn', 'error'] as const).map((lvl) => (
                 <button
                   key={lvl}
@@ -139,8 +139,8 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
                   onClick={() => setLevelFilter(lvl)}
                   className={`px-3 py-1 rounded-md text-xs font-medium uppercase transition-colors ${
                     levelFilter === lvl
-                      ? 'bg-[#19241E] text-[#22C55E]'
-                      : 'text-[#8A9990] hover:text-[#ECF2EE]'
+                      ? 'bg-[#252930] text-[#22C55E]'
+                      : 'text-[#959CA6] hover:text-[#F1F3F5]'
                   }`}
                 >
                   {lvl}
@@ -151,21 +151,21 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
 
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-[#78887F] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-[#7E8691] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Filter component or host..."
                 aria-label="Filter log entries"
-                className="w-52 pl-8 pr-3 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] placeholder-[#5A6A61] focus:outline-none focus:border-[#22C55E]"
+                className="w-52 pl-8 pr-3 py-1.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs text-[#F1F3F5] placeholder-[#606772] focus:outline-none focus:border-[#22C55E]"
               />
             </div>
 
             <button
               type="button"
               onClick={onTogglePause}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] hover:border-[#22C55E]/60 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs text-[#F1F3F5] hover:border-[#22C55E]/60 transition-colors"
             >
               {isPaused ? <Play className="w-3.5 h-3.5 text-[#22C55E]" /> : <Pause className="w-3.5 h-3.5" />}
               {isPaused ? 'Resume' : 'Pause'}
@@ -174,7 +174,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
             <button
               type="button"
               onClick={onCopyLogs}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] hover:border-[#22C55E]/60 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs text-[#F1F3F5] hover:border-[#22C55E]/60 transition-colors"
             >
               <Copy className="w-3.5 h-3.5" />
               Copy
@@ -183,7 +183,7 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
             <button
               type="button"
               onClick={onClearLogs}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#98A69E] hover:text-[#F87171] hover:border-[#F87171]/40 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131518] border border-[#2A2E35] text-xs text-[#9EA5AE] hover:text-[#F87171] hover:border-[#F87171]/40 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Clear
@@ -191,9 +191,9 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[#080B09] p-4 font-mono text-xs space-y-1.5 max-h-[420px] overflow-y-auto">
+        <div className="bg-[#101214] p-4 font-mono text-xs space-y-1.5 max-h-[420px] overflow-y-auto">
           {filteredLogs.length === 0 ? (
-            <div className="py-10 text-center text-[#6E7E75]">
+            <div className="py-10 text-center text-[#767E89]">
               No journal entries match the current filter.
             </div>
           ) : (
@@ -207,18 +207,18 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
               return (
                 <div
                   key={entry.id}
-                  className="grid grid-cols-12 gap-3 py-1 px-2 rounded hover:bg-[#101613] leading-relaxed"
+                  className="grid grid-cols-12 gap-3 py-1 px-2 rounded hover:bg-[#1A1C20] leading-relaxed"
                 >
-                  <span className="col-span-3 sm:col-span-2 text-[#697870] tabular-nums">
+                  <span className="col-span-3 sm:col-span-2 text-[#717883] tabular-nums">
                     {entry.timestamp}
                   </span>
                   <span className={`col-span-2 sm:col-span-1 uppercase font-semibold ${levelColor}`}>
                     {entry.level}
                   </span>
-                  <span className="col-span-7 sm:col-span-2 text-[#8FA297] truncate">
+                  <span className="col-span-7 sm:col-span-2 text-[#98A0AA] truncate">
                     {entry.component}
                   </span>
-                  <span className="col-span-12 sm:col-span-7 text-[#D7E0DA] break-all">
+                  <span className="col-span-12 sm:col-span-7 text-[#E1E4E8] break-all">
                     {entry.message}
                   </span>
                 </div>

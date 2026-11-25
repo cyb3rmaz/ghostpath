@@ -62,12 +62,12 @@ export const ThroughputChart: React.FC<ThroughputChartProps> = ({ data, isConnec
 
   return (
     <div className="relative w-full select-none">
-      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-[#6F7F76] mb-1.5">
+      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-[#767E89] mb-1.5">
         <span>0 Mbps</span>
         <span>{(maxMbps / 2).toFixed(0)} Mbps</span>
         <span>{maxMbps.toFixed(0)} Mbps peak</span>
       </div>
-      <div className="relative w-full h-[132px] rounded-lg bg-[#0B0F0C] border border-[#1B241F] overflow-hidden">
+      <div className="relative w-full h-[132px] rounded-lg bg-[#131518] border border-[#272A30] overflow-hidden">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           preserveAspectRatio="none"
@@ -91,7 +91,7 @@ export const ThroughputChart: React.FC<ThroughputChartProps> = ({ data, isConnec
                 y1={y}
                 x2={width}
                 y2={y}
-                stroke="#18211C"
+                stroke="#24272D"
                 strokeWidth={1}
                 strokeDasharray="3 4"
               />
@@ -108,7 +108,7 @@ export const ThroughputChart: React.FC<ThroughputChartProps> = ({ data, isConnec
                 y1={0}
                 x2={x}
                 y2={height}
-                stroke="#151D19"
+                stroke="#22252A"
                 strokeWidth={1}
               />
             );
@@ -120,7 +120,7 @@ export const ThroughputChart: React.FC<ThroughputChartProps> = ({ data, isConnec
             <path
               d={ulLine}
               fill="none"
-              stroke={isConnected ? '#7D8E84' : '#2C3831'}
+              stroke={isConnected ? '#858D98' : '#363C46'}
               strokeWidth={1.5}
               strokeDasharray="4 3"
               strokeLinecap="round"
@@ -130,7 +130,7 @@ export const ThroughputChart: React.FC<ThroughputChartProps> = ({ data, isConnec
             <path
               d={dlLine}
               fill="none"
-              stroke={isConnected ? '#22C55E' : '#33433A'}
+              stroke={isConnected ? '#22C55E' : '#3E4450'}
               strokeWidth={2}
               strokeLinecap="round"
             />
@@ -138,8 +138,8 @@ export const ThroughputChart: React.FC<ThroughputChartProps> = ({ data, isConnec
         </svg>
 
         {!isConnected && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#090C0A]/45">
-            <span className="text-xs font-mono text-[#78887F]">
+          <div className="absolute inset-0 flex items-center justify-center bg-[#111315]/45">
+            <span className="text-xs font-mono text-[#7E8691]">
               Tunnel idle — connect to stream interface throughput
             </span>
           </div>

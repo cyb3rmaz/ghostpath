@@ -593,9 +593,9 @@ export default function App() {
         {/* Brand Wordmark */}
         <div className="flex items-center gap-2.5 px-3 py-2 mb-6">
           <div className="w-7 h-7 rounded-lg bg-[#22C55E] flex items-center justify-center shrink-0">
-            <Sliders className="w-4 h-4 text-[#05140A]" />
+            <Sliders className="w-4 h-4 text-[#07140B]" />
           </div>
-          <span className="text-base font-bold tracking-tight text-[#ECF2EE] whitespace-nowrap">
+          <span className="text-base font-bold tracking-tight text-[#F1F3F5] whitespace-nowrap">
             GhostPath VPN
           </span>
         </div>
@@ -615,8 +615,8 @@ export default function App() {
                 }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                   active
-                    ? 'bg-[#15221A] text-[#22C55E]'
-                    : 'text-[#8A9990] hover:text-[#ECF2EE] hover:bg-[#131A16]'
+                    ? 'bg-[#1A2A20] text-[#22C55E]'
+                    : 'text-[#959CA6] hover:text-[#F1F3F5] hover:bg-[#1F2227]'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -628,8 +628,8 @@ export default function App() {
       </div>
 
       {/* Bottom Linux Interface Summary (Clean Unboxed Text) */}
-      <div className="px-3 pt-4 border-t border-[#1A231E] space-y-1.5 text-xs">
-        <div className="flex items-center justify-between text-[#78887F]">
+      <div className="px-3 pt-4 border-t border-[#272A30] space-y-1.5 text-xs">
+        <div className="flex items-center justify-between text-[#7E8691]">
           <span>State</span>
           <span
             className={`font-medium ${
@@ -637,7 +637,7 @@ export default function App() {
                 ? 'text-[#22C55E]'
                 : status === 'connecting'
                   ? 'text-[#FBBF24]'
-                  : 'text-[#8A9990]'
+                  : 'text-[#959CA6]'
             }`}
           >
             {status === 'connected'
@@ -647,24 +647,24 @@ export default function App() {
                 : 'Disconnected'}
           </span>
         </div>
-        <div className="flex items-center justify-between text-[#78887F]">
+        <div className="flex items-center justify-between text-[#7E8691]">
           <span>Interface</span>
-          <span className="font-mono text-[#D2DDD6]">
+          <span className="font-mono text-[#D5D9DF]">
             {interfaceMode === 'tun' ? 'ghost0' : `:${settings.socksPort}`}
           </span>
         </div>
-        <div className="flex items-center justify-between text-[#78887F]">
+        <div className="flex items-center justify-between text-[#7E8691]">
           <span>Core</span>
-          <span className="font-mono text-[#D2DDD6]">{settings.coreEngine}</span>
+          <span className="font-mono text-[#D5D9DF]">{settings.coreEngine}</span>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#090C0A] text-[#ECF2EE] flex">
+    <div className="min-h-screen bg-[#111315] text-[#F1F3F5] flex">
       {/* Desktop Left Sidebar */}
-      <aside className="hidden lg:flex w-[248px] shrink-0 bg-[#0D110F] border-r border-[#1A231E] flex-col sticky top-0 h-screen">
+      <aside className="hidden lg:flex w-[248px] shrink-0 bg-[#16181B] border-r border-[#272A30] flex-col sticky top-0 h-screen">
         {SidebarContent}
       </aside>
 
@@ -675,12 +675,12 @@ export default function App() {
             className="fixed inset-0 bg-black/65"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="relative z-50 w-[248px] bg-[#0D110F] border-r border-[#1A231E] h-full">
+          <aside className="relative z-50 w-[248px] bg-[#16181B] border-r border-[#272A30] h-full">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(false)}
               aria-label="Close navigation menu"
-              className="absolute top-4 right-3 p-2 rounded-lg text-[#8A9990] hover:text-[#ECF2EE]"
+              className="absolute top-4 right-3 p-2 rounded-lg text-[#959CA6] hover:text-[#F1F3F5]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -692,26 +692,26 @@ export default function App() {
       {/* Main Workspace Viewport */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Workspace Bar */}
-        <header className="h-16 px-6 border-b border-[#1A231E] bg-[#090C0A]/95 flex items-center justify-between gap-6 sticky top-0 z-20">
+        <header className="h-16 px-6 border-b border-[#272A30] bg-[#111315]/95 flex items-center justify-between gap-6 sticky top-0 z-20">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
               aria-label="Open navigation menu"
-              className="lg:hidden p-2 -ml-2 rounded-lg text-[#8A9990] hover:text-[#ECF2EE] hover:bg-[#141B17]"
+              className="lg:hidden p-2 -ml-2 rounded-lg text-[#959CA6] hover:text-[#F1F3F5] hover:bg-[#1F2227]"
             >
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 text-sm truncate">
-              <span className="text-[#78887F] whitespace-nowrap">GhostPath VPN</span>
-              <span className="text-[#4B5B52]" aria-hidden="true">/</span>
-              <h1 className="font-semibold text-[#ECF2EE] whitespace-nowrap">
+              <span className="text-[#7E8691] whitespace-nowrap">GhostPath VPN</span>
+              <span className="text-[#525862]" aria-hidden="true">/</span>
+              <h1 className="font-semibold text-[#F1F3F5] whitespace-nowrap">
                 {SECTION_TITLES[activeSection]}
               </h1>
               {activeSection === 'tunnel' && activeNode && (
                 <>
-                  <span className="text-[#4B5B52] hidden sm:inline" aria-hidden="true">/</span>
-                  <span className="text-xs font-mono text-[#8A9990] hidden sm:inline truncate">
+                  <span className="text-[#525862] hidden sm:inline" aria-hidden="true">/</span>
+                  <span className="text-xs font-mono text-[#959CA6] hidden sm:inline truncate">
                     {activeNode.name}
                   </span>
                 </>
@@ -723,7 +723,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setImportModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#22C55E] text-[#05140A] text-xs font-semibold hover:bg-[#16A34A] transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#22C55E] text-[#07140B] text-xs font-semibold hover:bg-[#16A34A] transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
               Import Profile
@@ -831,7 +831,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-[#141D18] border border-[#22C55E]/40 text-xs font-medium text-[#ECF2EE] shadow-xl"
+          className="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-[#19261E] border border-[#22C55E]/40 text-xs font-medium text-[#F1F3F5] shadow-xl"
         >
           {toastMessage}
         </div>

@@ -32,8 +32,8 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
       {/* Header Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-[#ECF2EE]">Subscriptions</h2>
-          <p className="text-xs text-[#8A9990] mt-0.5">
+          <h2 className="text-lg font-semibold text-[#F1F3F5]">Subscriptions</h2>
+          <p className="text-xs text-[#959CA6] mt-0.5">
             Remote YAML / JSON / Base64 node feeds synchronized automatically
           </p>
         </div>
@@ -41,7 +41,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
           <button
             type="button"
             onClick={onRefreshAll}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#121915] border border-[#1E2822] text-xs font-medium text-[#ECF2EE] hover:border-[#22C55E]/60 transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#1F2227] border border-[#2A2E35] text-xs font-medium text-[#F1F3F5] hover:border-[#22C55E]/60 transition-colors whitespace-nowrap"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Sync All
@@ -49,7 +49,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
           <button
             type="button"
             onClick={onOpenImportModal}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#22C55E] text-[#05140A] text-xs font-semibold hover:bg-[#16A34A] transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#22C55E] text-[#07140B] text-xs font-semibold hover:bg-[#16A34A] transition-colors whitespace-nowrap"
           >
             <Plus className="w-3.5 h-3.5" />
             Add Subscription
@@ -58,15 +58,15 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
       </div>
 
       {subscriptions.length === 0 ? (
-        <div className="rounded-xl bg-[#101512] border border-[#1D2721] p-12 text-center">
-          <p className="text-sm font-medium text-[#ECF2EE]">No active subscriptions</p>
-          <p className="text-xs text-[#8A9990] mt-1 mb-4">
+        <div className="rounded-xl bg-[#1A1C20] border border-[#292D34] p-12 text-center">
+          <p className="text-sm font-medium text-[#F1F3F5]">No active subscriptions</p>
+          <p className="text-xs text-[#959CA6] mt-1 mb-4">
             Import a subscription URL or share link to populate server nodes.
           </p>
           <button
             type="button"
             onClick={onOpenImportModal}
-            className="px-4 py-2 rounded-lg bg-[#22C55E] text-[#05140A] text-xs font-semibold hover:bg-[#16A34A] transition-colors"
+            className="px-4 py-2 rounded-lg bg-[#22C55E] text-[#07140B] text-xs font-semibold hover:bg-[#16A34A] transition-colors"
           >
             Import First Profile
           </button>
@@ -81,12 +81,12 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
             return (
               <section
                 key={sub.id}
-                className="rounded-xl bg-[#101512] border border-[#1D2721] p-6 flex flex-col justify-between space-y-5"
+                className="rounded-xl bg-[#1A1C20] border border-[#292D34] p-6 flex flex-col justify-between space-y-5"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h3 className="text-base font-semibold text-[#ECF2EE] truncate">{sub.name}</h3>
-                    <p className="text-xs text-[#8A9990] mt-1">
+                    <h3 className="text-base font-semibold text-[#F1F3F5] truncate">{sub.name}</h3>
+                    <p className="text-xs text-[#959CA6] mt-1">
                       {subNodes.length} endpoints · Updated {sub.lastUpdated} · Auto-sync {sub.autoUpdateHours}h
                     </p>
                   </div>
@@ -97,7 +97,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                       onClick={() => onRefreshSubscription(sub.id)}
                       disabled={sub.updating}
                       aria-label={`Sync ${sub.name}`}
-                      className="p-2 rounded-lg text-[#8A9990] hover:text-[#22C55E] hover:bg-[#17201B] transition-colors"
+                      className="p-2 rounded-lg text-[#959CA6] hover:text-[#22C55E] hover:bg-[#24272D] transition-colors"
                     >
                       <RefreshCw className={`w-4 h-4 ${sub.updating ? 'animate-spin text-[#22C55E]' : ''}`} />
                     </button>
@@ -105,7 +105,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                       type="button"
                       onClick={() => onDeleteSubscription(sub.id)}
                       aria-label={`Delete ${sub.name}`}
-                      className="p-2 rounded-lg text-[#8A9990] hover:text-[#F87171] hover:bg-[#1F1717] transition-colors"
+                      className="p-2 rounded-lg text-[#959CA6] hover:text-[#F87171] hover:bg-[#1F1717] transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -113,8 +113,8 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                 </div>
 
                 {/* Endpoint URL Bar */}
-                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#0A0D0B] border border-[#1B241F]">
-                  <span className="text-xs font-mono text-[#98A69E] truncate">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#131518] border border-[#272A30]">
+                  <span className="text-xs font-mono text-[#9EA5AE] truncate">
                     {isRevealed ? sub.url : `${sub.url.slice(0, 32)}••••••••••••••••••••`}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
@@ -122,7 +122,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                       type="button"
                       onClick={() => toggleReveal(sub.id)}
                       aria-label={isRevealed ? 'Mask subscription URL' : 'Reveal subscription URL'}
-                      className="p-1.5 rounded text-[#78887F] hover:text-[#ECF2EE] transition-colors"
+                      className="p-1.5 rounded text-[#7E8691] hover:text-[#F1F3F5] transition-colors"
                     >
                       {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
@@ -130,7 +130,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                       type="button"
                       onClick={() => onCopyText(sub.name, sub.url)}
                       aria-label="Copy subscription URL"
-                      className="p-1.5 rounded text-[#78887F] hover:text-[#22C55E] transition-colors"
+                      className="p-1.5 rounded text-[#7E8691] hover:text-[#22C55E] transition-colors"
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
@@ -140,12 +140,12 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                 {/* Bandwidth Quota */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs font-mono tabular-nums">
-                    <span className="text-[#8A9990]">
+                    <span className="text-[#959CA6]">
                       Quota: {sub.usedGb.toFixed(1)} GB / {sub.totalGb} GB
                     </span>
-                    <span className="text-[#ECF2EE]">Expires {sub.expiresAt}</span>
+                    <span className="text-[#F1F3F5]">Expires {sub.expiresAt}</span>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-[#19221D] overflow-hidden">
+                  <div className="w-full h-1.5 rounded-full bg-[#262A30] overflow-hidden">
                     <div
                       className="h-full rounded-full bg-[#22C55E] transition-all duration-300"
                       style={{ width: `${usagePercent}%` }}
