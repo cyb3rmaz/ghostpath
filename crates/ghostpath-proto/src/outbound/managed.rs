@@ -77,6 +77,12 @@ impl ManagedCoreOutbound {
         self
     }
 
+    pub fn with_config_dir(mut self, dir: &std::path::Path) -> Self {
+        let nonce = uuid::Uuid::new_v4().simple();
+        self.config_path = dir.join(format!("core_{}_{}.json", self.socks_port, nonce));
+        self
+    }
+
     pub fn socks_addr(&self) -> SocketAddr {
         SocketAddr::from(([127, 0, 0, 1], self.socks_port))
     }
@@ -100,7 +106,15 @@ impl ManagedCoreOutbound {
 
         let binary_name = match self.engine {
             CoreEngine::SingBox | CoreEngine::Native => "sing-box",
-            CoreEngine::XrayCore => "xray",
+            CoreEngine::XrayCore => {
+                if self.tun_interface.is_some() {
+                    return Err(CoreError::Config(
+                        "XrayCore does not support sing-box TUN JSON config; select sing-box for TUN mode"
+                            .to_string(),
+                    ));
+                }
+                "xray"
+            }
         };
 
         let options = SingBoxConfigOptions {
@@ -288,9 +302,9 @@ mod tests {
     #[tokio::test]
     async fn test_managed_outbound_start_and_ping() {
         let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("GHOSTPATH_RUNTIME_DIR", dir.path());
 
-        let mut outbound = ManagedCoreOutbound::new(CoreEngine::SingBox, 10899, 10898, 0x4750);
+        let mut outbound = ManagedCoreOutbound::new(CoreEngine::SingBox, 10899, 10898, 0x4750)
+            .with_config_dir(dir.path());
         assert!(!outbound
             .config_path
             .starts_with(std::env::temp_dir().join("ghostpath_core_10899.json")));
@@ -333,9 +347,9 @@ mod tests {
     #[tokio::test]
     async fn test_missing_binary_fails_closed_without_mock() {
         let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("GHOSTPATH_RUNTIME_DIR", dir.path());
 
-        let mut outbound = ManagedCoreOutbound::new(CoreEngine::XrayCore, 10901, 10902, 0x4750);
+        let mut outbound = ManagedCoreOutbound::new(CoreEngine::XrayCore, 10901, 10902, 0x4750)
+            .with_config_dir(dir.path());
         let node = ServerNode {
             id: "node-fail".to_string(),
             name: "Fail Node".to_string(),

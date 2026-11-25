@@ -266,14 +266,38 @@ impl DaemonEngine {
                     None
                 };
 
-                // 2. Open TUN device (fail-closed in production)
-                let mut tun = TunDevice::new("ghost0", config.settings.mtu);
-                if let Err(e) = tun.open().await {
+                // 2. Launch proxy core supervisor with TUN inbound ("ghost0") first so sing-box
+                //    creates and owns the ghost0 dataplane before policy routing/DNS attach to it.
+                let mut effective_rules = config.rules.clone();
+                if config.settings.geo_spoof.enabled && config.settings.geo_spoof.strict_geo_routing
+                {
+                    for rule in &mut effective_rules {
+                        if rule.action == RuleAction::Direct
+                            && matches!(rule.r#type, RuleType::Geoip | RuleType::Geosite)
+                            && rule.pattern != "private"
+                        {
+                            rule.action = RuleAction::Proxy;
+                        }
+                    }
+                }
+
+                let mut core = ManagedCoreOutbound::new(
+                    config.settings.core_engine,
+                    config.settings.socks_port,
+                    config.settings.http_port,
+                    0x4750,
+                )
+                .with_rules(effective_rules)
+                .with_tun(
+                    "ghost0",
+                    config.settings.mtu,
+                    &config.settings.tun_stack,
+                );
+                if let Err(e) = core.start(&node).await {
                     drop(ks);
                     *status = ConnectionStatus::Failed;
-                    bail!("Failed to open kernel TUN interface: {e}");
+                    bail!("Failed to start managed proxy core: {e}");
                 }
-                info!("TUN interface ghost0 created and opened successfully");
 
                 // 3. Apply coexistence rules (LAN / Docker bypass)
                 let coex_cfg = CoexistenceConfig {
@@ -284,7 +308,7 @@ impl DaemonEngine {
                 let cg = match coex.apply_coexistence_rules(&mut journal) {
                     Ok(g) => Some(g),
                     Err(e) => {
-                        let _ = tun.close().await;
+                        let _ = core.stop().await;
                         drop(ks);
                         *status = ConnectionStatus::Failed;
                         bail!("Failed to apply coexistence rules: {e}");
@@ -302,7 +326,7 @@ impl DaemonEngine {
                     }
                     Err(e) => {
                         drop(cg);
-                        let _ = tun.close().await;
+                        let _ = core.stop().await;
                         drop(ks);
                         *status = ConnectionStatus::Failed;
                         bail!("Failed to apply policy routing: {e}");
@@ -323,46 +347,15 @@ impl DaemonEngine {
                     Err(e) => {
                         drop(rg);
                         drop(cg);
-                        let _ = tun.close().await;
+                        let _ = core.stop().await;
                         drop(ks);
                         *status = ConnectionStatus::Failed;
                         bail!("Failed to configure DNS: {e}");
                     }
                 };
 
-                // 6. Launch proxy core supervisor (fail-closed)
-                let mut effective_rules = config.rules.clone();
-                if config.settings.geo_spoof.enabled && config.settings.geo_spoof.strict_geo_routing
-                {
-                    for rule in &mut effective_rules {
-                        if rule.action == RuleAction::Direct
-                            && matches!(rule.r#type, RuleType::Geoip | RuleType::Geosite)
-                            && rule.pattern != "private"
-                        {
-                            rule.action = RuleAction::Proxy;
-                        }
-                    }
-                }
-
-                let mut core = ManagedCoreOutbound::new(
-                    config.settings.core_engine,
-                    config.settings.socks_port,
-                    config.settings.http_port,
-                    0x4750,
-                )
-                .with_rules(effective_rules);
-                if let Err(e) = core.start(&node).await {
-                    drop(dg);
-                    drop(rg);
-                    drop(cg);
-                    let _ = tun.close().await;
-                    drop(ks);
-                    *status = ConnectionStatus::Failed;
-                    bail!("Failed to start managed proxy core: {e}");
-                }
-
                 let _ = journal.save();
-                (cg, Some(tun), rg, dg, None, ks, Some(core), None)
+                (cg, None, rg, dg, None, ks, Some(core), None)
             }
         } else {
             info!("Dry-run mode: simulating tunnel setup");
@@ -459,9 +452,9 @@ impl DaemonEngine {
         *self.session.write().await = Some(session);
         *status = ConnectionStatus::Connected;
         self.append_log(format!(
-            "Connected to node {} ({})",
+            "Connected to node {} ({:?})",
             sanitize_display_text(&node.name, 64),
-            node.host
+            node.protocol
         ))
         .await;
 
@@ -679,7 +672,7 @@ impl DaemonEngine {
             self.append_log(format!(
                 "Imported {} profile(s) from Amnezia server: {}",
                 imported_nodes.len(),
-                server.server_name
+                sanitize_display_text(&server.server_name, 64)
             ))
             .await;
 
@@ -740,8 +733,11 @@ impl DaemonEngine {
             }
             let _ = config.save();
 
-            self.append_log(format!("Imported profile: {}", node.name))
-                .await;
+            self.append_log(format!(
+                "Imported profile: {}",
+                sanitize_display_text(&node.name, 64)
+            ))
+            .await;
 
             return Ok(serde_json::json!({
                 "type": "single_node",
@@ -768,8 +764,11 @@ impl DaemonEngine {
         }
         let _ = config.save();
 
-        self.append_log(format!("Imported profile: {}", node.name))
-            .await;
+        self.append_log(format!(
+            "Imported profile: {}",
+            sanitize_display_text(&node.name, 64)
+        ))
+        .await;
 
         Ok(serde_json::json!({
             "type": "single_node",
@@ -1000,7 +999,7 @@ impl DaemonEngine {
 
         self.append_log(format!(
             "Imported subscription '{}' ({} nodes)",
-            sub_name,
+            sanitize_display_text(&sub_name, 64),
             imported_nodes.len()
         ))
         .await;
@@ -1735,5 +1734,31 @@ mod tests {
             .await
             .is_err());
         assert!(safe_fetch_subscription("https://[::1]/sub").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_connect_fails_closed_when_core_or_tun_unavailable() {
+        let engine = DaemonEngine::new(false);
+        {
+            let mut cfg = engine.config.write().await;
+            cfg.nodes.clear();
+            cfg.active_node_id = None;
+            cfg.settings.kill_switch = false; // Isolate core/tun fail-closed path without nftables
+        }
+
+        let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@198.51.100.20:443?security=reality#FailClosed";
+        engine
+            .import_profile(uri, Some("FailClosed".to_string()))
+            .await
+            .unwrap();
+
+        // In unprivileged test env without CAP_NET_ADMIN / sing-box, connect MUST fail closed
+        let res = engine.connect(None).await;
+        assert!(
+            res.is_err(),
+            "connect must fail closed when core/TUN is unavailable"
+        );
+        let st = engine.get_status().await.unwrap();
+        assert_eq!(st["status"], "failed");
     }
 }

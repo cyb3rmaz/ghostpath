@@ -78,7 +78,7 @@ impl RouteManager {
         // 3. Add default route in table 5180: default dev ghost0
         self.add_table_route(dev, "default", GHOST_ROUTING_TABLE, false)?;
 
-        // 4. IPv6 handling
+        // 4. IPv6 handling: either tunnel fully or blackhole to prevent IPv6 leaks
         if ipv6_enabled {
             self.add_ip_rule_v6(
                 GHOST_RULE_PRIO_BYPASS,
@@ -95,6 +95,22 @@ impl RouteManager {
                 "IPv6 capture rule diverting traffic to GhostPath table 5180",
             )?;
             self.add_table_route(dev, "default", GHOST_ROUTING_TABLE, true)?;
+        } else {
+            self.add_ip_rule_v6(
+                GHOST_RULE_PRIO_BYPASS,
+                Some(GHOST_FWMARK),
+                "main",
+                false,
+                "IPv6 bypass rule for proxy core outbound sockets",
+            )?;
+            self.add_ip_rule_v6(
+                GHOST_RULE_PRIO_CAPTURE,
+                Some(GHOST_FWMARK),
+                &GHOST_ROUTING_TABLE.to_string(),
+                true,
+                "IPv6 blackhole capture rule preventing leaks",
+            )?;
+            self.add_table_blackhole_v6(GHOST_ROUTING_TABLE)?;
         }
 
         // Save journal to disk for crash safety
@@ -329,6 +345,31 @@ impl RouteManager {
         Ok(())
     }
 
+    fn add_table_blackhole_v6(&mut self, table: u32) -> Result<()> {
+        if self.dry_run {
+            tracing::info!(table = table, "[dry-run] ip -6 route add blackhole default");
+            return Ok(());
+        }
+        let table_str = table.to_string();
+        let output = run_cmd(
+            "ip",
+            &[
+                "-6",
+                "route",
+                "replace",
+                "blackhole",
+                "default",
+                "table",
+                &table_str,
+            ],
+        )?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!(table = table, error = %stderr, "Failed to add IPv6 blackhole route (system may lack IPv6)");
+        }
+        Ok(())
+    }
+
     fn revert_action(action: &JournalAction) -> Result<()> {
         match action {
             JournalAction::AddedIpRule { priority, .. } => {
@@ -389,10 +430,8 @@ impl Drop for RouteGuard {
 }
 
 fn run_cmd(prog: &str, args: &[&str]) -> Result<std::process::Output> {
-    Command::new(prog)
-        .args(args)
-        .output()
-        .map_err(CoreError::Io)
+    let bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin(prog);
+    Command::new(bin).args(args).output().map_err(CoreError::Io)
 }
 
 #[cfg(test)]

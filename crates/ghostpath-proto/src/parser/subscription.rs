@@ -101,7 +101,7 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<ServerNode>> {
 
 fn parse_uri_list(text: &str) -> Vec<ServerNode> {
     let mut nodes = Vec::new();
-    for line in text.lines() {
+    for line in text.lines().take(MAX_SUBSCRIPTION_LINES) {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -143,5 +143,17 @@ mod tests {
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0].name, "SE-01");
         assert_eq!(nodes[1].name, "DE-01");
+    }
+
+    #[test]
+    fn test_subscription_enforces_max_lines() {
+        let mut raw = String::new();
+        for i in 0..(MAX_SUBSCRIPTION_LINES + 50) {
+            raw.push_str(&format!(
+                "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@195.181.162.88:443?security=reality#Node-{i}\n"
+            ));
+        }
+        let nodes = parse_subscription_content(&raw).unwrap();
+        assert_eq!(nodes.len(), MAX_SUBSCRIPTION_LINES);
     }
 }

@@ -273,8 +273,9 @@ impl TunnelBackend for AwgBackend {
         }
 
         // 3. Configure interface addresses
+        let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
         for addr in &config.interface.address {
-            let status = Command::new("ip")
+            let status = Command::new(&ip_bin)
                 .args(["addr", "add", addr, "dev", &self.interface_name])
                 .status()
                 .await
@@ -287,7 +288,7 @@ impl TunnelBackend for AwgBackend {
 
         // 4. Set MTU
         if let Some(mtu) = config.interface.mtu {
-            let _ = Command::new("ip")
+            let _ = Command::new(&ip_bin)
                 .args([
                     "link",
                     "set",
@@ -301,7 +302,7 @@ impl TunnelBackend for AwgBackend {
         }
 
         // 5. Bring interface UP
-        let status = Command::new("ip")
+        let status = Command::new(&ip_bin)
             .args(["link", "set", "dev", &self.interface_name, "up"])
             .status()
             .await
@@ -345,7 +346,8 @@ impl TunnelBackend for AwgBackend {
         }
 
         // Delete network interface
-        let _ = Command::new("ip")
+        let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
+        let _ = Command::new(ip_bin)
             .args(["link", "del", "dev", &self.interface_name])
             .status()
             .await;

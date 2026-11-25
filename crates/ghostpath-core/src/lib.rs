@@ -16,7 +16,8 @@ pub use config::GhostConfig;
 pub use error::{CoreError, Result};
 pub use event::{EventBus, GhostEvent};
 pub use fs_safe::{
-    atomic_write_private, atomic_write_with_mode, ensure_private_dir, read_to_string_no_follow,
+    atomic_write_private, atomic_write_system_file, atomic_write_with_mode, ensure_private_dir,
+    read_to_string_no_follow,
 };
 pub use geo::{
     find_country_preset, geo_country_presets, validate_timezone_name, GeoCoordinates,

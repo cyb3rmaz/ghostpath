@@ -107,19 +107,20 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; fin
 ## 5. Code Coverage (`cargo llvm-cov --workspace --summary-only`)
 
 ```text
-TOTAL   Regions: 9175 (Missed: 3822, Cover: 58.34%)
-        Functions: 792 (Missed: 343, Cover: 56.69%)
-        Lines: 8389 (Missed: 3565, Cover: 57.50%)
+TOTAL   Regions: 9631 (Missed: 3961, Cover: 58.87%)
+        Functions: 817 (Missed: 348, Cover: 57.41%)
+        Lines: 8740 (Missed: 3671, Cover: 58.00%)
 ```
 
 ---
 
 ## 6. Systemd Unit Hardening (`systemd-analyze security --offline=true systemd/ghostpathd.service`)
 
-- **Before hardening:** `Overall exposure level for ghostpathd.service: 6.0 MEDIUM`
-- **After hardening:**
+- **Before initial hardening:** `Overall exposure level for ghostpathd.service: 6.0 MEDIUM`
+- **After initial hardening:** `Overall exposure level for ghostpathd.service: 4.2 OK`
+- **After `SystemCallFilter=@system-service` (current):**
 ```text
-→ Overall exposure level for ghostpathd.service: 4.2 OK 🙂
+→ Overall exposure level for ghostpathd.service: 2.8 OK 🙂
 ```
 
 ---
@@ -162,14 +163,23 @@ $ unshare --user --net --map-root-user bash -c 'ip addr show lo && ip rule show'
 
 ---
 
-## 9. Packaging & Script Linters (`shellcheck`, `lintian`)
+## 9. Packaging & Script Linters (`shellcheck`, `lintian`, `rpmlint`)
 
-### `shellcheck packaging/*.sh scripts/*.sh`
+### `shellcheck packaging/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/appimage/AppRun packaging/appimage/build-appimage.sh scripts/*.sh`
 ```text
-(exit 0, 0 errors, 0 warnings)
+SHELLCHECK_RC=0 (0 errors, 0 warnings)
 ```
 
-### `lintian dist/ghostpath-vpn_0.1.0_amd64.deb` (after packaging fixes)
+### `rpmlint packaging/rpm/ghostpath-vpn.spec`
+```text
+ghostpath-vpn.spec: W: no-buildroot-tag
+ghostpath-vpn.spec: W: no-%check-section
+ghostpath-vpn.spec: W: invalid-url Source0: ghostpath-vpn-0.1.0.tar.gz
+ 0 packages and 1 specfiles checked; 0 errors, 3 warnings, 0 filtered, 0 badness
+RPMLINT_RC=0
+```
+
+### `lintian ghostpath-vpn_0.1.0_amd64.deb`
 ```text
 E: ghostpath-vpn: statically-linked-binary [usr/bin/amneziawg-go]
 W: ghostpath-vpn: maintainer-script-calls-systemctl [postinst:17]
@@ -180,13 +190,12 @@ W: ghostpath-vpn: no-manual-page [usr/bin/amneziawg-go]
 W: ghostpath-vpn: no-manual-page [usr/bin/ghostpath-gui]
 W: ghostpath-vpn: no-manual-page [usr/bin/ghostpath]
 W: ghostpath-vpn: no-manual-page [usr/bin/ghostpathd]
+LINTIAN_RC=0
 ```
-Fixed in `packaging/build-deb.sh`: moved systemd unit to `/usr/lib/systemd/system/`, stripped Rust binaries (`9.2M` → `8.2M`), added `copyright` and `changelog.gz`, fixed `0644` permissions on all icons, fixed maintainer email, replaced `/tmp/ghostpath-deb-staging` with `mktemp -d`, and removed hardcoded `/usr/bin/` path in `prerm`.
 
 ---
 
 ## 10. Tools Unavailable / Not Run in This Environment
 
-- **`rpmlint`:** Not run (RPM packaging not built in this session).
-- **`cargo-fuzz` (libFuzzer) / `ThreadSanitizer` / `AddressSanitizer`:** Replaced in this environment by `proptest` property-based fuzzing (`amnezia_proptest`) and Miri; run libFuzzer/TSan/ASan in CI.
+- **`cargo-fuzz` (libFuzzer) / `ThreadSanitizer` / `AddressSanitizer`:** `cargo-fuzz` is not installed in this environment; replaced by `proptest` property-based fuzzing (`amnezia_proptest`) and Miri (`ghostpath-core` pure-logic tests). Run libFuzzer/TSan/ASan in CI.
 - **Live kernel `tun` / `nftables` packet-leak & multi-distro VM install tests:** Not executed on host network/WSL kernel; requires privileged VM/container CI runner.

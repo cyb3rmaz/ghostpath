@@ -123,11 +123,12 @@ impl CoexistenceManager {
         }
 
         let prio_str = prio.to_string();
-        let _ = Command::new("ip")
+        let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
+        let _ = Command::new(&ip_bin)
             .args(["rule", "del", "priority", &prio_str])
             .output();
 
-        let output = Command::new("ip")
+        let output = Command::new(&ip_bin)
             .args([
                 "rule", "add", "to", cidr, "table", "main", "priority", &prio_str,
             ])
@@ -168,11 +169,12 @@ impl CoexistenceManager {
         }
 
         let prio_str = prio.to_string();
-        let _ = Command::new("ip")
+        let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
+        let _ = Command::new(&ip_bin)
             .args(["rule", "del", "priority", &prio_str])
             .output();
 
-        let output = Command::new("ip")
+        let output = Command::new(&ip_bin)
             .args([
                 "rule", "add", "iif", iface, "table", "main", "priority", &prio_str,
             ])
@@ -193,9 +195,10 @@ impl CoexistenceManager {
         if self.dry_run {
             return;
         }
+        let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
         for p in prio_start..prio_end {
             let prio_str = p.to_string();
-            let _ = Command::new("ip")
+            let _ = Command::new(&ip_bin)
                 .args(["rule", "del", "priority", &prio_str])
                 .output();
         }
@@ -218,9 +221,10 @@ impl CoexistenceGuard {
 impl Drop for CoexistenceGuard {
     fn drop(&mut self) {
         if self.active && !self.dry_run {
+            let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
             for p in self.prio_start..self.prio_end {
                 let prio_str = p.to_string();
-                let _ = Command::new("ip")
+                let _ = Command::new(&ip_bin)
                     .args(["rule", "del", "priority", &prio_str])
                     .output();
             }

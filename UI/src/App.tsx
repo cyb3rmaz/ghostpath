@@ -245,7 +245,8 @@ export default function App() {
     });
 
     const unlistenDeepLink = GhostApi.onDeepLinkImported((link) => {
-      showToast(`Received link: ${link.substring(0, 30)}...`);
+      const scheme = link.split('://')[0] || 'vpn';
+      showToast(`Received ${scheme}:// link — review and confirm import`);
       setImportModalOpen(true);
     });
 

@@ -171,7 +171,8 @@ impl TunDevice {
         // Tear down link
         #[cfg(target_os = "linux")]
         {
-            let _ = std::process::Command::new("ip")
+            let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
+            let _ = std::process::Command::new(ip_bin)
                 .args(["link", "set", "dev", &self.name, "down"])
                 .output();
         }
@@ -236,7 +237,8 @@ fn open_linux_tun(name: &str) -> Result<RawFd> {
 #[cfg(target_os = "linux")]
 fn configure_link_and_address(name: &str, mtu: u16) -> Result<()> {
     fn run_ip(args: &[&str]) -> Result<()> {
-        let out = std::process::Command::new("ip")
+        let ip_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("ip");
+        let out = std::process::Command::new(ip_bin)
             .args(args)
             .output()
             .map_err(CoreError::Io)?;

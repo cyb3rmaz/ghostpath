@@ -224,7 +224,8 @@ impl KillSwitch {
 
 fn run_nft(args: &[&str]) -> Result<()> {
     debug!("Running nft {:?}", args);
-    let out = Command::new("nft")
+    let nft_bin = ghostpath_core::GhostPaths::resolve_trusted_system_bin("nft");
+    let out = Command::new(nft_bin)
         .args(args)
         .output()
         .map_err(CoreError::Io)?;

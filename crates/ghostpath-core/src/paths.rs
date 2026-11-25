@@ -69,6 +69,19 @@ impl GhostPaths {
     pub fn geolocation_backup() -> PathBuf {
         Self::state_dir().join("geolocation.backup.json")
     }
+
+    /// Resolves a privileged system binary (`ip`, `nft`, `resolvectl`, `timedatectl`, `systemctl`)
+    /// from trusted fixed system prefixes instead of mutable `PATH`.
+    #[must_use]
+    pub fn resolve_trusted_system_bin(name: &str) -> PathBuf {
+        for dir in ["/usr/sbin", "/sbin", "/usr/bin", "/bin"] {
+            let candidate = PathBuf::from(dir).join(name);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        PathBuf::from(name)
+    }
 }
 
 fn dirs_fallback_config() -> PathBuf {

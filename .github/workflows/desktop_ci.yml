@@ -58,7 +58,19 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy Lint Check
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Security Audit & Dependency Policy (cargo-audit, cargo-deny)
+        run: |
+          cargo install --locked cargo-audit cargo-deny || true
+          cargo audit || true
+          cargo deny check
+
+      - name: ShellCheck & Systemd Security Check
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck || true
+          shellcheck packaging/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/appimage/AppRun packaging/appimage/build-appimage.sh scripts/*.sh
+          systemd-analyze security --offline=true systemd/ghostpathd.service
 
       - name: Run Test Suite
         run: cargo test --workspace

@@ -80,6 +80,7 @@ fi
 %{_bindir}/ghostpath
 %{_bindir}/ghostpathd
 %{_bindir}/ghostpath-gui
+%{_bindir}/amneziawg-go
 %{_unitdir}/ghostpathd.service
 %{_datadir}/applications/ghostpath.desktop
 %{_datadir}/metainfo/com.ghostpath.vpn.metainfo.xml
@@ -87,5 +88,5 @@ fi
 %{_datadir}/icons/hicolor/scalable/apps/ghostpath.svg
 
 %changelog
-* Sun Nov 23 2026 GhostPath Team <dev@ghostpath.vpn> - 0.1.0-1
+* Mon Nov 23 2026 GhostPath Team <dev@ghostpath.vpn> - 0.1.0-1
 - Initial release of GhostPath VPN desktop application with Tauri 2

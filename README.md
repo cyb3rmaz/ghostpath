@@ -3,18 +3,11 @@
 [![CI](https://img.shields.io/badge/CI-Passing-brightgreen.svg)](#testing)
 [![Linux Only](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20aarch64-blue.svg)](#requirements)
 [![Rust Edition](https://img.shields.io/badge/Rust-2021%20(1.75%2B)-orange.svg)](#building-from-source)
-[![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-lightgrey.svg)](LICENSE)
-[![Farsi Documentation](https://img.shields.io/badge/Docs-%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20(Persian)-green.svg)](README_FA.md)
+[![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-lightgrey.svg)](#license)
 
 **GhostPath VPN** is a high-performance, native Linux VPN client written in Rust, engineered specifically to provide **bulletproof, reliable TUN mode** under severe and hostile internet filtering conditions (such as the national censorship infrastructure in Iran).
 
 Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and systemd-resolved conflicts on Linux, GhostPath VPN employs kernel-level policy routing, socket fwmark exclusion, strict encrypted DNS tunneling, robust multi-VPN coexistence, and full support for **AmneziaVPN / AmneziaWG obfuscated tunnels**.
-
----
-
-## 📖 Translations
-
-- [راهنمای فارسی (Persian / Farsi Documentation)](README_FA.md)
 
 ---
 
@@ -29,7 +22,7 @@ Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and s
 
 ### 2. DNS Leak & Poisoning Elimination
 * **The Problem:** Linux distributions running `systemd-resolved`, `NetworkManager`, and `/etc/resolv.conf` frequently fight each other, leaking plaintext UDP queries to the local ISP resolver where they are intercepted or poisoned.
-* **GhostPath's Solution:** Native integration with `systemd-resolved` over D-Bus/`resolvectl` using routing domain `"~."` on interface `ghost0`, forcing 100% of DNS resolution into the tunnel. Includes an internal encrypted DNS proxy (`DoH` over tunnel) and atomic fallback for `/etc/resolv.conf`.
+* **GhostPath's Solution:** Native integration with `systemd-resolved` over `resolvectl` using routing domain `"~."` on interface `ghost0` (or `awg-ghost0`), forcing DNS resolution into the tunnel. Includes a local DNS-over-TCP/SOCKS5 forwarder (`DnsProxy`) and an atomic `0644` fallback for `/etc/resolv.conf`.
 
 ### 3. Multi-VPN Coexistence & Chaining
 * **The Problem:** Running WireGuard, OpenVPN, or Tailscale simultaneously with other clients results in routing table clashes and broken tunnels.
@@ -68,7 +61,7 @@ GhostPath VPN is organized as a modular Cargo workspace:
 | **`ghostpath-core`** | Configuration manager (0600 permissions), state machine, event bus, and routing rules engine. |
 | **`ghostpath-proto`** | V2Ray-family URI parsers (`vless://`, `vmess://`, `trojan://`, `ss://`), AmneziaVPN (`vpn://` Qt qCompress), AmneziaWG / WireGuard `.conf` parsers, subscriptions, sing-box/Xray supervisor. |
 | **`ghostpath-tun`** | Linux `/dev/net/tun` asynchronous packet I/O via Tokio `AsyncFd`. |
-| **`ghostpath-net`** | Netlink policy routing manager, `UndoJournal`, `DnsManager`, `DnsProxy`, and `KillSwitch`. |
+| **`ghostpath-net`** | Policy routing manager (`ip rule`/`ip route`), `UndoJournal`, `DnsManager`, `DnsProxy`, `GeoSpoofManager`, and `KillSwitch`. |
 | **`ghostpath-daemon`** | Privileged system daemon (`ghostpathd`), `SO_PEERCRED` Unix socket IPC (`/run/ghostpath/ghostpathd.sock`). |
 | **`ghostpath-cli`** | User-friendly CLI client (`ghostpath connect`, `disconnect`, `status`, `doctor`, etc.). |
 | **`ghostpath-gui`** | Native Linux desktop application built with Tauri 2 + WebKitGTK and React 19. |
@@ -206,16 +199,17 @@ cargo test --workspace
 ## 🔒 Security & Privacy
 
 - **Zero Telemetry:** GhostPath collects zero telemetry, metrics, or personal analytics.
-- **Sensitive Credential Redaction:** Passwords, UUIDs, Reality keys, and auth headers are strictly redacted from logs.
-- **Privilege Separation:** CLI and GUI run unprivileged; communication with `ghostpathd` is authenticated kernel-side using `SO_PEERCRED`.
-- **Memory Safety:** `#![forbid(unsafe_code)]` enforced across all crates, except strictly scoped, documented FFI wrappers for `/dev/net/tun` ioctls.
+- **Sensitive Credential Redaction:** Passwords, UUIDs, Reality keys, and subscription URLs are redacted from logs and IPC node listings.
+- **Privilege Separation:** CLI and GUI run unprivileged; communication with `ghostpathd` over `/run/ghostpath/ghostpathd.sock` (`0660 root:ghostpath`) is authenticated kernel-side using `SO_PEERCRED` and rate-limited.
+- **Memory Safety:** `#![forbid(unsafe_code)]` is enforced across all library, CLI, and GUI crates, except minimal documented syscalls in `ghostpath-tun` (`/dev/net/tun` ioctls) and `ghostpathd` process hardening (`PR_SET_DUMPABLE`, `RLIMIT_CORE`, `umask`).
+- **Security Docs & Limitations:** See [SECURITY.md](SECURITY.md), [docs/SECURITY_REVIEW/THREAT_MODEL.md](docs/SECURITY_REVIEW/THREAT_MODEL.md), and [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). GhostPath is a censorship-circumvention tunnel, not an anonymity network: it does not protect against browser fingerprinting, global passive ISP traffic correlation, or compromise of the remote VPN server.
 
 ---
 
 ## 📄 License
 
 Licensed under either of:
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0 (`Apache-2.0`)
+- MIT license (`MIT`)
 
 at your option.

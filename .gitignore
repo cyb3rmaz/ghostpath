@@ -13,3 +13,4 @@ undo_journal.json
 packaging/bin/
 
 /.superpowers
+/.agents

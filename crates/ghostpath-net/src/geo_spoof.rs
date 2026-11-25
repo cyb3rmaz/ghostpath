@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ghostpath_core::error::{CoreError, Result};
-use ghostpath_core::fs_safe::{atomic_write_private, read_to_string_no_follow};
+use ghostpath_core::fs_safe::{
+    atomic_write_private, atomic_write_system_file, read_to_string_no_follow,
+};
 use ghostpath_core::geo::{validate_timezone_name, GeoCoordinates, GeoCountryPreset};
 use ghostpath_core::paths::GhostPaths;
 use serde::{Deserialize, Serialize};
@@ -290,8 +292,11 @@ impl GeoSpoofManager {
             preset.altitude_m,
             preset.accuracy_m
         );
-        fs::write(&self.paths.geolocation_path, geolocation_body)?;
-        set_world_readable(&self.paths.geolocation_path);
+        atomic_write_system_file(
+            &self.paths.geolocation_path,
+            geolocation_body.as_bytes(),
+            0o644,
+        )?;
 
         if let Some(parent) = self.paths.geoclue_dropin_path.parent() {
             if let Err(e) = fs::create_dir_all(parent) {
@@ -321,15 +326,18 @@ enable=false
 [modem-gps]
 enable=false
 ";
-            if let Err(e) = fs::write(&self.paths.geoclue_dropin_path, dropin_body) {
+            if let Err(e) = atomic_write_system_file(
+                &self.paths.geoclue_dropin_path,
+                dropin_body.as_bytes(),
+                0o644,
+            ) {
                 tracing::warn!(error = %e, "Could not write GeoClue drop-in override");
-            } else {
-                set_world_readable(&self.paths.geoclue_dropin_path);
             }
         }
 
         if self.paths.use_systemd_tools {
-            let _ = Command::new("systemctl")
+            let systemctl_bin = GhostPaths::resolve_trusted_system_bin("systemctl");
+            let _ = Command::new(systemctl_bin)
                 .args(["try-restart", "geoclue"])
                 .output();
         }

@@ -208,3 +208,59 @@
 - **Location:** Root repo & `.github/workflows/desktop_ci.yml`
 - **Description:** Repo lacks `SECURITY.md`, `docs/THREAT_MODEL.md` / `docs/TROUBLESHOOTING.md`, honest non-goals/limitations, fuzz harnesses, and CI jobs for `clippy::pedantic`, `cargo audit`/`deny`, secret scanning, shellcheck, and namespace integration tests.
 - **Fix:** Add `SECURITY.md`, `docs/THREAT_MODEL.md`, `docs/TROUBLESHOOTING.md`, fuzz target crate/harnesses, namespace leak/crash-recovery test script, and expand `.github/workflows/desktop_ci.yml`.
+
+---
+
+## Independent Hostile Re-Audit Findings (GP-SEC-21 to GP-SEC-27)
+
+During the independent hostile re-audit of the remediated codebase, the following additional Critical, High, and Medium gaps were uncovered and fixed:
+
+### GP-SEC-21 (Critical — CVSS 9.0): `atomic_write_private` on `/etc/resolv.conf` Chmods `/etc` to `0700` & Breaks Non-Root DNS
+- **Area:** A (Filesystem Safety) / D (Networking Correctness)
+- **Location:** `crates/ghostpath-core/src/fs_safe.rs:80-85`, `crates/ghostpath-net/src/dns.rs:162,180,215`, `crates/ghostpath-net/src/geo_spoof.rs:293,324`
+- **Description:** `atomic_write_with_mode` unconditionally called `ensure_private_dir(parent)` which executes `chmod 0700` on `parent`. Calling `atomic_write_private("/etc/resolv.conf", ...)` in `DnsManager::backup_and_write_resolv_conf()` would `chmod 0700 /etc` (locking all non-root users out of `/etc/passwd`, `/etc/hosts`, `/etc/ssl/certs`) AND write `/etc/resolv.conf` with mode `0600` (breaking DNS for every unprivileged user). Additionally, `restore_dns` / `DnsGuard::drop` used `fs::copy` (following symlinks) and `geo_spoof.rs` used `fs::write` on `/etc/geolocation` and `/etc/geoclue/conf.d/99-ghostpath.conf`.
+- **Fix:** Added `fs_safe::atomic_write_system_file(path, data, mode)` which verifies `parent` is a non-symlink directory without altering `parent`'s permissions, writes atomically with `O_CREAT | O_EXCL | O_NOFOLLOW` + `0644`, and used it in `dns.rs` (both write and restore) and `geo_spoof.rs`.
+- **Regression Test:** `fs_safe::tests::test_atomic_write_system_file_preserves_parent_mode`.
+
+### GP-SEC-22 (Critical — CVSS 8.6): `ghost0` TUN Dataplane Still Disconnected in `DaemonEngine::connect()`
+- **Area:** D (Networking Correctness)
+- **Location:** `crates/ghostpath-daemon/src/engine.rs:270-365`, `crates/ghostpath-proto/src/outbound/managed.rs:107-115`
+- **Description:** Despite `singbox.rs` supporting `tun-in` and `ManagedCoreOutbound` having `.with_tun()`, `DaemonEngine::connect()` still opened `TunDevice::new("ghost0")` separately and never called `.with_tun("ghost0", ...)` on `ManagedCoreOutbound`, leaving `ghost0` with no packet forwarder. Moreover, `CoreEngine::XrayCore` passed `sing-box` JSON to `xray`.
+- **Fix:** Wired `.with_tun("ghost0", config.settings.mtu, &config.settings.tun_stack)` into `ManagedCoreOutbound` in `DaemonEngine::connect()`, starting `sing-box` after `KillSwitch::enable` so `sing-box` owns `ghost0` before `RouteManager` and `DnsManager` attach; rejected `CoreEngine::XrayCore` with `tun_interface.is_some()` cleanly. Also fixed a flaky env-var race in `managed.rs` tests by adding `with_config_dir()`.
+- **Regression Test:** `engine::tests::test_connect_fails_closed_when_core_or_tun_unavailable`, `managed::tests::test_managed_outbound_start_and_ping`.
+
+### GP-SEC-23 (High — CVSS 7.6): IPv6 Leak When `ipv6_routing == false`, Echo-Stub `DnsProxy`, and `resolvectl` URL Rejection
+- **Area:** C (Leak Prevention) / D (Networking Correctness)
+- **Location:** `crates/ghostpath-net/src/manager.rs:82-98`, `crates/ghostpath-net/src/dns_proxy.rs`, `crates/ghostpath-net/src/dns.rs`
+- **Description:**
+  1. When `ipv6_routing == false` and `kill_switch == false`, `RouteManager` installed zero IPv6 rules, allowing IPv6 traffic to bypass the tunnel.
+  2. `DnsProxy` was still a fake echo responder returning 0-answer `NOERROR` packets.
+  3. `DnsManager` passed `https://...`/`tls://...` URLs verbatim to `resolvectl dns` and `/etc/resolv.conf`.
+- **Fix:** Added IPv6 `blackhole default` routing in table `5180` when `ipv6_enabled == false`; upgraded `DnsProxy` to a real length-prefixed DNS-over-TCP/SOCKS5 forwarder returning `SERVFAIL` on upstream failure; added `resolve_dns_ip()` in `dns.rs`.
+- **Regression Test:** `dns_proxy::tests::test_dns_proxy_forwards_over_upstream_and_returns_servfail_when_down`.
+
+### GP-SEC-24 (High — CVSS 7.3): `IpcServer` Idle-Connection DoS, Socket Dir Symlink Check, and Per-UID Rate Limiting
+- **Area:** A (Privilege Boundary & IPC)
+- **Location:** `crates/ghostpath-daemon/src/ipc/server.rs`
+- **Description:** `handle_client` lacked a read timeout on `fill_buf()`, allowing 32 idle connections to permanently exhaust `MAX_CONCURRENT_IPC_CLIENTS`; `run()` did not check `socket_path.parent()` for symlinks; and expensive RPCs lacked per-UID rate limiting.
+- **Fix:** Added symlink check + `0755` enforcement on socket parent dir, 30s `IPC_IDLE_READ_TIMEOUT` on `fill_buf()`, and `UidRateLimiter` (10 expensive RPCs per 10s window per UID).
+- **Regression Test:** `ipc::server::tests::test_ipc_rate_limiter_bounds_expensive_rpcs`.
+
+### GP-SEC-25 (High — CVSS 7.1): `PATH`-Resolved Privileged Binaries & Unsanitized/Unredacted `append_log` Entries
+- **Area:** A (Command Execution) / C (Secrets)
+- **Location:** `crates/ghostpath-core/src/paths.rs`, `crates/ghostpath-net/src/*.rs`, `crates/ghostpath-tun/src/lib.rs`, `crates/ghostpath-daemon/src/{tunnel/awg.rs, engine.rs}`
+- **Description:** `Command::new("ip")`, `"nft"`, `"resolvectl"`, `"systemctl"` relied on `PATH`; `DaemonEngine::connect()` logged `node.host` in `append_log`, and `import_profile`/`import_subscription` logged unsanitized profile/server names.
+- **Fix:** Added `GhostPaths::resolve_trusted_system_bin()` (`/usr/sbin`, `/sbin`, `/usr/bin`, `/bin`) across all privileged command invocations; redacted `node.host` and applied `sanitize_display_text(..., 64)` in `append_log`.
+
+### GP-SEC-26 (Medium — CVSS 5.4): Unenforced `MAX_SUBSCRIPTION_LINES`, Missing `SystemCallFilter`, Deep-Link Toast Secret Leak
+- **Area:** B / A / F
+- **Location:** `crates/ghostpath-proto/src/parser/subscription.rs:104`, `systemd/ghostpathd.service`, `UI/src/App.tsx:247`
+- **Description:** `parse_uri_list` ignored `MAX_SUBSCRIPTION_LINES`; `ghostpathd.service` omitted `SystemCallFilter=@system-service`; `App.tsx` toasted the first 30 chars of deep links (exposing UUIDs/tokens).
+- **Fix:** Enforced `.take(MAX_SUBSCRIPTION_LINES)` in `parse_uri_list`; added `SystemCallFilter=@system-service` (reducing `systemd-analyze security` exposure from `4.2 OK` to `2.8 OK`); redacted deep-link toast to scheme only; updated CI workflow with `cargo audit`, `cargo deny`, `shellcheck`, `systemd-analyze security`.
+- **Regression Test:** `parser::subscription::tests::test_subscription_enforces_max_lines`.
+
+### GP-SEC-27 (Medium — CVSS 4.8): RPM Spec `%files` Missing `amneziawg-go` & Bogus Changelog Date
+- **Area:** G (Packaging)
+- **Location:** `packaging/rpm/ghostpath-vpn.spec`
+- **Description:** `ghostpath-vpn.spec` installed `amneziawg-go` without listing it in `%files` and had `Sun Nov 23 2026` (Nov 23, 2026 is Monday), causing an `rpmlint` warning.
+- **Fix:** Added `%{_bindir}/amneziawg-go` to `%files` and corrected changelog date to `Mon Nov 23 2026`.
