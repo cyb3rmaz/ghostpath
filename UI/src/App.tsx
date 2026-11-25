@@ -7,9 +7,9 @@ import {
   Plus,
   Settings as SettingsIcon,
   Shield,
-  Sliders,
   X,
 } from 'lucide-react';
+import appIconUrl from '../app-icon.svg';
 import {
   INITIAL_LOGS,
   INITIAL_NODES,
@@ -592,9 +592,11 @@ export default function App() {
       <div>
         {/* Brand Wordmark */}
         <div className="flex items-center gap-2.5 px-3 py-2 mb-6">
-          <div className="w-7 h-7 rounded-lg bg-[#22C55E] flex items-center justify-center shrink-0">
-            <Sliders className="w-4 h-4 text-[#07140B]" />
-          </div>
+          <img
+            src={appIconUrl}
+            alt="GhostPath VPN icon"
+            className="w-7 h-7 rounded-lg shrink-0"
+          />
           <span className="text-base font-bold tracking-tight text-[#F1F3F5] whitespace-nowrap">
             GhostPath VPN
           </span>
