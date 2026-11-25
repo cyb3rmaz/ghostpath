@@ -1,11 +1,22 @@
 import {
   AppSettings,
   DiagnosticLog,
+  GeoSpoofSettings,
   RoutingRule,
   ServerNode,
   Subscription,
   TrafficPoint,
 } from '../types/vpn';
+
+export const INITIAL_GEO_SPOOF_SETTINGS: GeoSpoofSettings = {
+  enabled: false,
+  mode: 'match-node',
+  countryCode: 'DE',
+  spoofTimezone: true,
+  spoofGeolocation: true,
+  applyOnConnect: true,
+  strictGeoRouting: false,
+};
 
 export const INITIAL_SUBSCRIPTIONS: Subscription[] = [];
 

@@ -16,6 +16,7 @@ struct MockState {
     settings: Value,
     nodes: Vec<Value>,
     logs: Vec<Value>,
+    geo_status: Value,
 }
 
 impl Default for MockDaemon {
@@ -70,6 +71,26 @@ impl MockDaemon {
                     "target": "ghostpath-daemon",
                     "message": "GhostPath mock daemon initialized"
                 })],
+                geo_status: json!({
+                    "settings": {
+                        "enabled": false,
+                        "mode": "match-node",
+                        "countryCode": "DE",
+                        "spoofTimezone": true,
+                        "spoofGeolocation": true,
+                        "applyOnConnect": true,
+                        "strictGeoRouting": false
+                    },
+                    "spoofActive": false,
+                    "appliedCountryCode": null,
+                    "appliedCountryName": null,
+                    "appliedTimezone": null,
+                    "activeTimezone": "UTC",
+                    "activeGeolocation": null,
+                    "backedUpTimezone": null,
+                    "geoclueAvailable": true,
+                    "timedatectlAvailable": true
+                }),
             })),
         }
     }
@@ -160,6 +181,55 @@ impl MockDaemon {
                 Ok(state.settings.clone())
             }
             "getLogs" => Ok(Value::Array(state.logs.clone())),
+            "listGeoCountries" => Ok(serde_json::to_value(ghostpath_core::geo_country_presets())
+                .map_err(|e| e.to_string())?),
+            "getGeoSpoofStatus" => Ok(state.geo_status.clone()),
+            "updateGeoSpoof" => {
+                if let Some(obj) = params.as_object() {
+                    if let Some(settings) = state.geo_status.get_mut("settings").and_then(|s| s.as_object_mut()) {
+                        for (k, v) in obj {
+                            settings.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+                Ok(state.geo_status.clone())
+            }
+            "applyGeoSpoof" => {
+                let code = params
+                    .get("countryCode")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| state.geo_status["settings"]["countryCode"].as_str())
+                    .unwrap_or("DE");
+                let preset = ghostpath_core::find_country_preset(code)
+                    .ok_or_else(|| format!("Unsupported country: {code}"))?;
+                state.geo_status["spoofActive"] = json!(true);
+                state.geo_status["appliedCountryCode"] = json!(preset.country_code);
+                state.geo_status["appliedCountryName"] = json!(preset.country_name);
+                state.geo_status["appliedTimezone"] = json!(preset.timezone);
+                state.geo_status["activeTimezone"] = json!(preset.timezone);
+                state.geo_status["backedUpTimezone"] = json!("UTC");
+                state.geo_status["activeGeolocation"] = json!({
+                    "latitude": preset.latitude,
+                    "longitude": preset.longitude,
+                    "altitudeM": preset.altitude_m,
+                    "accuracyM": preset.accuracy_m
+                });
+                Ok(state.geo_status.clone())
+            }
+            "restoreGeoSpoof" => {
+                state.geo_status["spoofActive"] = json!(false);
+                state.geo_status["appliedCountryCode"] = Value::Null;
+                state.geo_status["appliedCountryName"] = Value::Null;
+                state.geo_status["appliedTimezone"] = Value::Null;
+                state.geo_status["activeTimezone"] = json!("UTC");
+                state.geo_status["backedUpTimezone"] = Value::Null;
+                state.geo_status["activeGeolocation"] = Value::Null;
+                Ok(state.geo_status.clone())
+            }
+            "updateRuleAction" => Ok(json!({
+                "id": params.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                "action": params.get("action").and_then(|v| v.as_str()).unwrap_or("proxy")
+            })),
             "runDoctor" => Ok(json!({
                 "checks": [
                     { "id": "tun", "name": "Kernel TUN Device", "passed": true, "fix": null },
@@ -224,5 +294,22 @@ mod tests {
 
         let nodes_after = daemon.handle_rpc("listNodes", &json!({})).unwrap();
         assert_eq!(nodes_after.as_array().unwrap().len(), count_before + 1);
+    }
+
+    #[test]
+    fn test_mock_daemon_geo_spoof() {
+        let daemon = MockDaemon::new();
+        let countries = daemon.handle_rpc("listGeoCountries", &json!({})).unwrap();
+        assert!(countries.as_array().unwrap().len() >= 25);
+
+        let applied = daemon
+            .handle_rpc("applyGeoSpoof", &json!({ "countryCode": "DE" }))
+            .unwrap();
+        assert_eq!(applied["spoofActive"], true);
+        assert_eq!(applied["activeTimezone"], "Europe/Berlin");
+
+        let restored = daemon.handle_rpc("restoreGeoSpoof", &json!({})).unwrap();
+        assert_eq!(restored["spoofActive"], false);
+        assert_eq!(restored["activeTimezone"], "UTC");
     }
 }

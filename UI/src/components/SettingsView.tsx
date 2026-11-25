@@ -1,4 +1,5 @@
 import React from 'react';
+import { ChevronDown } from 'lucide-react';
 import { AppSettings, CoreEngine } from '../types/vpn';
 
 interface SettingsViewProps {
@@ -164,20 +165,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <label className="block text-xs text-[#8A9990] mb-1.5" htmlFor="tun-stack">
               TUN Stack
             </label>
-            <select
-              id="tun-stack"
-              value={settings.tunStack}
-              onChange={(e) =>
-                onUpdateSettings({
-                  tunStack: e.target.value as AppSettings['tunStack'],
-                })
-              }
-              className="w-full px-3 py-2 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs font-mono text-[#ECF2EE] focus:outline-none focus:border-[#22C55E]"
-            >
-              <option value="system">system</option>
-              <option value="gvisor">gvisor</option>
-              <option value="mixed">mixed</option>
-            </select>
+            <div className="relative">
+              <select
+                id="tun-stack"
+                value={settings.tunStack}
+                onChange={(e) =>
+                  onUpdateSettings({
+                    tunStack: e.target.value as AppSettings['tunStack'],
+                  })
+                }
+                className="w-full appearance-none pl-3 pr-8 py-2 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs font-mono text-[#ECF2EE] focus:outline-none focus:border-[#22C55E]"
+              >
+                <option value="system">system</option>
+                <option value="gvisor">gvisor</option>
+                <option value="mixed">mixed</option>
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-[#8A9990] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
 
           <div>

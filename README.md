@@ -50,6 +50,13 @@ Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and s
   - **Engine Runtime:** Supervised userspace `amneziawg-go` engine with outbound socket fwmark `0x4750` for zero-leak routing via `awg-ghost0`, plus optional kernel module detection.
   - **Cryptographic Zeroization:** Private keys and preshared keys are protected in memory with `Zeroize` and erased upon drop. Sensitive keys are masked in UI and omitted from logs.
 
+### 7. System Geo Location & Timezone Spoofing
+* **The Problem:** Websites and desktop apps cross-check browser/OS timezones and GeoClue2 location APIs against your VPN exit IP to detect proxy usage.
+* **GhostPath's Solution:** Choose any country manually or auto-match your active VPN server inside the **Routing** view or CLI (`ghostpath geo set DE`):
+  - **System Timezone:** Synchronizes Linux OS timezone (`timedatectl` / `/etc/localtime`) to the selected country's IANA timezone.
+  - **Desktop GeoClue2 Location:** Writes reversible static coordinates (`/etc/geolocation` & drop-in override) so location-aware apps and browsers align with the target country.
+  - **Guaranteed Auto-Restore:** Original timezone and GeoClue state are backed up into `UndoJournal` and automatically restored upon disconnect, shutdown, or `ghostpathd --recover`.
+
 ---
 
 ## 🏗️ Architecture & Crates

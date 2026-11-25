@@ -12,12 +12,22 @@
 }
 
 @layer base {
+  :root,
   html,
   body {
+    color-scheme: dark;
     font-family: var(--font-sans);
     background-color: #090C0A;
     color: #ECF2EE;
     letter-spacing: 0.01em;
+  }
+
+  select,
+  select option,
+  select optgroup {
+    color-scheme: dark;
+    background-color: #0A0D0B;
+    color: #ECF2EE;
   }
 
   h1,

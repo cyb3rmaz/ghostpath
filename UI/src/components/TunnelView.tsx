@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  ChevronDown,
   Globe,
   Loader2,
   Power,
@@ -370,21 +371,24 @@ export const TunnelView: React.FC<TunnelViewProps> = ({
             {/* Protocol Filter */}
             <div className="flex items-center gap-1.5">
               <SlidersHorizontal className="w-3.5 h-3.5 text-[#78887F]" />
-              <select
-                aria-label="Filter by protocol"
-                value={protocolFilter}
-                onChange={(e) => setProtocolFilter(e.target.value as 'all' | NodeProtocol)}
-                className="px-2.5 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] focus:outline-none focus:border-[#22C55E]"
-              >
-                <option value="all">All Protocols</option>
-                <option value="AmneziaWG">AmneziaWG</option>
-                <option value="WireGuard">WireGuard</option>
-                <option value="VLESS">VLESS</option>
-                <option value="Hysteria2">Hysteria2</option>
-                <option value="Trojan">Trojan</option>
-                <option value="VMess">VMess</option>
-                <option value="Shadowsocks">Shadowsocks</option>
-              </select>
+              <div className="relative">
+                <select
+                  aria-label="Filter by protocol"
+                  value={protocolFilter}
+                  onChange={(e) => setProtocolFilter(e.target.value as 'all' | NodeProtocol)}
+                  className="appearance-none pl-2.5 pr-7 py-1.5 rounded-lg bg-[#0A0D0B] border border-[#1E2822] text-xs text-[#ECF2EE] focus:outline-none focus:border-[#22C55E]"
+                >
+                  <option value="all">All Protocols</option>
+                  <option value="AmneziaWG">AmneziaWG</option>
+                  <option value="WireGuard">WireGuard</option>
+                  <option value="VLESS">VLESS</option>
+                  <option value="Hysteria2">Hysteria2</option>
+                  <option value="Trojan">Trojan</option>
+                  <option value="VMess">VMess</option>
+                  <option value="Shadowsocks">Shadowsocks</option>
+                </select>
+                <ChevronDown className="w-3 h-3 text-[#8A9990] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
             </div>
 
             {/* Search */}

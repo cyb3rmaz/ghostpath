@@ -1,4 +1,15 @@
-import { ServerNode, AppSettings, ConnectionStatus, DiagnosticLog, Subscription, RoutingRule } from '../types/vpn';
+import {
+  AppSettings,
+  ConnectionStatus,
+  DiagnosticLog,
+  GeoCountryPreset,
+  GeoSpoofSettings,
+  GeoSpoofStatus,
+  RuleAction,
+  RoutingRule,
+  ServerNode,
+  Subscription,
+} from '../types/vpn';
 
 export interface RpcResponse<T = any> {
   jsonrpc: string;
@@ -95,7 +106,13 @@ export const GhostApi = {
   },
 
   async importProfile(raw: string, name?: string) {
-    return callRpc<{ type: string; node: ServerNode }>('importProfile', {
+    return callRpc<{
+      type: string;
+      node?: ServerNode;
+      nodes?: ServerNode[];
+      importedCount?: number;
+      unsupportedContainers?: { container: string; reason: string }[];
+    }>('importProfile', {
       raw,
       name,
     });
@@ -143,6 +160,30 @@ export const GhostApi = {
 
   async toggleRule(id: string) {
     return callRpc<{ id: string; enabled: boolean }>('toggleRule', { id });
+  },
+
+  async updateRuleAction(id: string, action: RuleAction) {
+    return callRpc<{ id: string; action: RuleAction }>('updateRuleAction', { id, action });
+  },
+
+  async listGeoCountries() {
+    return callRpc<GeoCountryPreset[]>('listGeoCountries', {});
+  },
+
+  async getGeoSpoofStatus() {
+    return callRpc<GeoSpoofStatus>('getGeoSpoofStatus', {});
+  },
+
+  async updateGeoSpoof(patch: Partial<GeoSpoofSettings>) {
+    return callRpc<GeoSpoofStatus>('updateGeoSpoof', patch);
+  },
+
+  async applyGeoSpoof(countryCode?: string) {
+    return callRpc<GeoSpoofStatus>('applyGeoSpoof', countryCode ? { countryCode } : {});
+  },
+
+  async restoreGeoSpoof() {
+    return callRpc<GeoSpoofStatus>('restoreGeoSpoof', {});
   },
 
   async getSettings() {

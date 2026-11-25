@@ -22,6 +22,9 @@ import {
   AppSettings,
   ConnectionStatus,
   DiagnosticLog,
+  GeoCountryPreset,
+  GeoSpoofSettings,
+  GeoSpoofStatus,
   NavSection,
   NetworkInterfaceMode,
   RoutingMode,
@@ -85,6 +88,9 @@ export default function App() {
   const [isPingingAll, setIsPingingAll] = useState(false);
 
   const [rules, setRules] = useState<RoutingRule[]>(INITIAL_RULES);
+  const [geoCountries, setGeoCountries] = useState<GeoCountryPreset[]>([]);
+  const [geoStatus, setGeoStatus] = useState<GeoSpoofStatus | null>(null);
+  const [geoBusy, setGeoBusy] = useState(false);
   const [logs, setLogs] = useState<DiagnosticLog[]>(INITIAL_LOGS);
   const [logsPaused, setLogsPaused] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(INITIAL_SETTINGS);
@@ -200,6 +206,18 @@ export default function App() {
       })
       .catch(() => {});
 
+    GhostApi.listGeoCountries()
+      .then((countries) => {
+        if (countries) setGeoCountries(countries);
+      })
+      .catch(() => {});
+
+    GhostApi.getGeoSpoofStatus()
+      .then((st) => {
+        if (st) setGeoStatus(st);
+      })
+      .catch(() => {});
+
     // Listen to real-time events from daemon
     const unlistenTraffic = GhostApi.onTrafficUpdated((traffic) => {
       if (typeof traffic.downloadMbps === 'number') {
@@ -222,6 +240,7 @@ export default function App() {
     const unlistenState = GhostApi.onStateChanged((stateData) => {
       if (stateData && stateData.status) {
         setStatus(stateData.status);
+        GhostApi.getGeoSpoofStatus().then(setGeoStatus).catch(() => {});
       }
     });
 
@@ -250,6 +269,7 @@ export default function App() {
       } catch (e) {
         console.warn('Disconnect RPC failed:', e);
       }
+      GhostApi.getGeoSpoofStatus().then(setGeoStatus).catch(() => {});
       setSessionSeconds(0);
       setTrafficHistory(INITIAL_TRAFFIC_HISTORY);
       appendLog(
@@ -277,6 +297,7 @@ export default function App() {
         await GhostApi.connect(activeNode.id);
         setStatus('connected');
         setSessionSeconds(0);
+        GhostApi.getGeoSpoofStatus().then(setGeoStatus).catch(() => {});
         appendLog(
           'info',
           'core/tun',
@@ -456,10 +477,64 @@ export default function App() {
     }
   };
 
-  const handleChangeRuleAction = (id: string, action: RuleAction) => {
+  const handleChangeRuleAction = async (id: string, action: RuleAction) => {
     setRules((prev) =>
       prev.map((r) => (r.id === id ? { ...r, action } : r))
     );
+    try {
+      await GhostApi.updateRuleAction(id, action);
+    } catch (e: any) {
+      showToast(`Rule update failed: ${e?.message || 'Daemon error'}`);
+    }
+  };
+
+  const handleUpdateGeoSpoof = async (patch: Partial<GeoSpoofSettings>) => {
+    setGeoBusy(true);
+    try {
+      const updated = await GhostApi.updateGeoSpoof(patch);
+      setGeoStatus(updated);
+      if (patch.countryCode) {
+        showToast(`Geo target updated to ${patch.countryCode}`);
+      } else if (patch.enabled !== undefined) {
+        showToast(patch.enabled ? 'Geo & Timezone spoofing enabled' : 'Geo & Timezone spoofing disabled');
+      }
+    } catch (e: any) {
+      showToast(`Geo spoofing update failed: ${e?.message || 'Daemon error'}`);
+    } finally {
+      setGeoBusy(false);
+    }
+  };
+
+  const handleApplyGeoSpoof = async (countryCode?: string) => {
+    setGeoBusy(true);
+    try {
+      const st = await GhostApi.applyGeoSpoof(countryCode);
+      setGeoStatus(st);
+      appendLog(
+        'info',
+        'system/geo',
+        `System timezone set to ${st.activeTimezone} (${st.appliedCountryName || 'Custom'})`
+      );
+      showToast(`Timezone & Geo set to ${st.appliedCountryName || st.activeTimezone}`);
+    } catch (e: any) {
+      showToast(`Apply geo spoofing failed: ${e?.message || 'Daemon error'}`);
+    } finally {
+      setGeoBusy(false);
+    }
+  };
+
+  const handleRestoreGeoSpoof = async () => {
+    setGeoBusy(true);
+    try {
+      const st = await GhostApi.restoreGeoSpoof();
+      setGeoStatus(st);
+      appendLog('info', 'system/geo', `Restored OS timezone (${st.activeTimezone}) and GeoClue state`);
+      showToast(`Restored original timezone (${st.activeTimezone})`);
+    } catch (e: any) {
+      showToast(`Restore failed: ${e?.message || 'Daemon error'}`);
+    } finally {
+      setGeoBusy(false);
+    }
   };
 
   const handleDeleteRule = async (id: string) => {
@@ -706,6 +781,14 @@ export default function App() {
               onChangeRuleAction={handleChangeRuleAction}
               onDeleteRule={handleDeleteRule}
               onAddRule={handleAddRule}
+              geoCountries={geoCountries}
+              geoStatus={geoStatus}
+              geoBusy={geoBusy}
+              connectionStatus={status}
+              activeNode={activeNode}
+              onUpdateGeoSpoof={handleUpdateGeoSpoof}
+              onApplyGeoSpoof={handleApplyGeoSpoof}
+              onRestoreGeoSpoof={handleRestoreGeoSpoof}
             />
           )}
 
