@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use ghostpath_core::error::{CoreError, Result};
+use ghostpath_core::fs_safe::{atomic_write_private, read_to_string_no_follow};
 use ghostpath_core::geo::{validate_timezone_name, GeoCoordinates, GeoCountryPreset};
 use ghostpath_core::paths::GhostPaths;
 use serde::{Deserialize, Serialize};
@@ -98,7 +99,7 @@ impl GeoSpoofManager {
 
     /// Returns the backed-up original timezone if a spoofing session backup currently exists.
     pub fn read_backed_up_timezone(&self) -> Option<String> {
-        let content = fs::read_to_string(&self.paths.timezone_backup_path).ok()?;
+        let content = read_to_string_no_follow(&self.paths.timezone_backup_path, 64 * 1024).ok()?;
         let backup: TimezoneBackup = serde_json::from_str(&content).ok()?;
         Some(backup.original_timezone)
     }
@@ -151,7 +152,11 @@ impl GeoSpoofManager {
             );
             if spoof_timezone {
                 journal.record(JournalAction::ModifiedTimezone {
-                    backup_path: self.paths.timezone_backup_path.to_string_lossy().to_string(),
+                    backup_path: self
+                        .paths
+                        .timezone_backup_path
+                        .to_string_lossy()
+                        .to_string(),
                     original_timezone: current_tz,
                 });
             }
@@ -224,15 +229,17 @@ impl GeoSpoofManager {
                 original_timezone: current_tz.to_string(),
                 localtime_symlink_target: symlink_target,
             };
-            fs::write(
-                &self.paths.timezone_backup_path,
-                serde_json::to_string_pretty(&backup)
-                    .map_err(|e| CoreError::Serialization(e.to_string()))?,
-            )?;
+            let json = serde_json::to_string_pretty(&backup)
+                .map_err(|e| CoreError::Serialization(e.to_string()))?;
+            atomic_write_private(&self.paths.timezone_backup_path, json.as_bytes())?;
         }
 
         journal.record(JournalAction::ModifiedTimezone {
-            backup_path: self.paths.timezone_backup_path.to_string_lossy().to_string(),
+            backup_path: self
+                .paths
+                .timezone_backup_path
+                .to_string_lossy()
+                .to_string(),
             original_timezone: current_tz.to_string(),
         });
 
@@ -258,11 +265,9 @@ impl GeoSpoofManager {
                 existed,
                 original_content,
             };
-            fs::write(
-                &self.paths.geolocation_backup_path,
-                serde_json::to_string_pretty(&backup)
-                    .map_err(|e| CoreError::Serialization(e.to_string()))?,
-            )?;
+            let json = serde_json::to_string_pretty(&backup)
+                .map_err(|e| CoreError::Serialization(e.to_string()))?;
+            atomic_write_private(&self.paths.geolocation_backup_path, json.as_bytes())?;
         }
 
         journal.record(JournalAction::ModifiedGeolocation {
@@ -464,7 +469,10 @@ fn apply_timezone_target(paths: &GeoSpoofPaths, target_tz: &str) -> Result<()> {
             .output()
         {
             if out.status.success() {
-                tracing::info!(timezone = target_tz, "Applied system timezone via timedatectl");
+                tracing::info!(
+                    timezone = target_tz,
+                    "Applied system timezone via timedatectl"
+                );
                 return Ok(());
             }
             let err = String::from_utf8_lossy(&out.stderr);
@@ -490,7 +498,10 @@ fn apply_timezone_target(paths: &GeoSpoofPaths, target_tz: &str) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     fs::write(&paths.timezone_file_path, format!("{target_tz}\n"))?;
-    tracing::info!(timezone = target_tz, "Applied system timezone via localtime symlink");
+    tracing::info!(
+        timezone = target_tz,
+        "Applied system timezone via localtime symlink"
+    );
     Ok(())
 }
 
@@ -614,11 +625,17 @@ mod tests {
     fn test_apply_and_restore_isolated_root_preserves_original_across_swaps() {
         let dir = tempdir().unwrap();
         let paths = GeoSpoofPaths::with_root(dir.path());
-        seed_zoneinfo(&paths, &["Asia/Tehran", "Europe/Berlin", "Europe/Amsterdam"]);
+        seed_zoneinfo(
+            &paths,
+            &["Asia/Tehran", "Europe/Berlin", "Europe/Amsterdam"],
+        );
 
         fs::create_dir_all(paths.localtime_path.parent().unwrap()).unwrap();
-        std::os::unix::fs::symlink(paths.zoneinfo_dir.join("Asia/Tehran"), &paths.localtime_path)
-            .unwrap();
+        std::os::unix::fs::symlink(
+            paths.zoneinfo_dir.join("Asia/Tehran"),
+            &paths.localtime_path,
+        )
+        .unwrap();
         fs::write(&paths.timezone_file_path, "Asia/Tehran\n").unwrap();
 
         let mgr = GeoSpoofManager::with_paths(paths.clone(), false);
@@ -630,7 +647,10 @@ mod tests {
         let mut guard = mgr.apply(&de, true, true, &mut journal).unwrap();
 
         assert_eq!(mgr.read_active_timezone(), "Europe/Berlin");
-        assert_eq!(mgr.read_backed_up_timezone().as_deref(), Some("Asia/Tehran"));
+        assert_eq!(
+            mgr.read_backed_up_timezone().as_deref(),
+            Some("Asia/Tehran")
+        );
         let coords = mgr.read_active_geolocation().unwrap();
         assert!((coords.latitude - de.latitude).abs() < 0.001);
         assert!(paths.geoclue_dropin_path.exists());
@@ -648,7 +668,10 @@ mod tests {
         let nl = find_country_preset("NL").unwrap();
         let guard2 = mgr.apply(&nl, true, true, &mut journal).unwrap();
         assert_eq!(mgr.read_active_timezone(), "Europe/Amsterdam");
-        assert_eq!(mgr.read_backed_up_timezone().as_deref(), Some("Asia/Tehran"));
+        assert_eq!(
+            mgr.read_backed_up_timezone().as_deref(),
+            Some("Asia/Tehran")
+        );
 
         // Dropping guard2 restores Asia/Tehran and deletes GhostPath-created geolocation files
         drop(guard2);
@@ -706,8 +729,11 @@ mod tests {
         let mut paths = GeoSpoofPaths::with_root(dir.path());
         seed_zoneinfo(&paths, &["Asia/Tehran", "Europe/Berlin"]);
         fs::create_dir_all(paths.localtime_path.parent().unwrap()).unwrap();
-        std::os::unix::fs::symlink(paths.zoneinfo_dir.join("Asia/Tehran"), &paths.localtime_path)
-            .unwrap();
+        std::os::unix::fs::symlink(
+            paths.zoneinfo_dir.join("Asia/Tehran"),
+            &paths.localtime_path,
+        )
+        .unwrap();
         fs::write(&paths.timezone_file_path, "Asia/Tehran\n").unwrap();
 
         // Force geolocation write to fail by pointing geolocation_path to an existing directory

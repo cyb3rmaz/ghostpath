@@ -1,7 +1,5 @@
 use super::ini_parser::{export_awg_conf, parse_awg_conf};
-use super::model::{
-    AmneziaContainer, AmneziaContainerType, AmneziaError, AmneziaServerConfig,
-};
+use super::model::{AmneziaContainer, AmneziaContainerType, AmneziaError, AmneziaServerConfig};
 use base64::prelude::*;
 use serde_json::Value;
 
@@ -18,7 +16,9 @@ pub fn parse_vpn_uri(uri: &str) -> Result<AmneziaServerConfig, AmneziaError> {
 
     let payload_b64 = &trimmed[6..];
     if payload_b64.is_empty() {
-        return Err(AmneziaError::InvalidBase64("Empty payload in vpn:// URI".to_string()));
+        return Err(AmneziaError::InvalidBase64(
+            "Empty payload in vpn:// URI".to_string(),
+        ));
     }
 
     // Decode URL-safe Base64 (supporting both padded and unpadded variants)
@@ -33,12 +33,8 @@ pub fn parse_vpn_uri(uri: &str) -> Result<AmneziaServerConfig, AmneziaError> {
     }
 
     // Qt qCompress format: 4-byte Big-Endian uncompressed length
-    let uncompressed_len = u32::from_be_bytes([
-        raw_bytes[0],
-        raw_bytes[1],
-        raw_bytes[2],
-        raw_bytes[3],
-    ]) as usize;
+    let uncompressed_len =
+        u32::from_be_bytes([raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3]]) as usize;
 
     if uncompressed_len > MAX_UNCOMPRESSED_SIZE {
         return Err(AmneziaError::DecompressionSizeExceeded {
@@ -75,7 +71,10 @@ pub fn encode_vpn_uri(server: &AmneziaServerConfig) -> Result<String, AmneziaErr
 
     for c in &server.containers {
         let mut container_obj = serde_json::Map::new();
-        container_obj.insert("container".to_string(), Value::String(c.container_name.clone()));
+        container_obj.insert(
+            "container".to_string(),
+            Value::String(c.container_name.clone()),
+        );
 
         if let Some(ref awg) = c.awg_profile {
             let conf_str = export_awg_conf(awg);

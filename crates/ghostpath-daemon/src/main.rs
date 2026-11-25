@@ -32,6 +32,8 @@ struct DaemonCli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    harden_process();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
@@ -44,24 +46,47 @@ async fn main() -> Result<()> {
     info!("Starting GhostPath VPN daemon (ghostpathd)");
 
     if args.recover {
-        info!("Running recovery pass for stale state...");
-        if let Some(journal) = ghostpath_net::UndoJournal::load()? {
+        info!("Running full recovery pass for stale state...");
+
+        // 1. Disarm kill switch first so connectivity can be restored
+        if let Err(e) = ghostpath_net::KillSwitch::disable(args.dry_run) {
+            tracing::warn!("Could not disable kill switch during recovery: {}", e);
+        }
+
+        // 2. Revert policy routing rules & table 5180 via undo journal
+        if !args.dry_run {
+            if let Err(e) = ghostpath_net::RouteManager::recover() {
+                tracing::warn!("Could not recover routing state from journal: {}", e);
+            }
+            // Also ensure routes are flushed cleanly even if journal was absent
+            let rm = ghostpath_net::RouteManager::new(false);
+            let _ = rm.cleanup_routing();
+        }
+
+        // 3. Restore DNS (systemd-resolved links & /etc/resolv.conf backup)
+        let dm = ghostpath_net::DnsManager::new("1.1.1.1", "8.8.8.8", args.dry_run);
+        let _ = dm.restore_dns("ghost0");
+        let _ = dm.restore_dns("awg-ghost0");
+
+        // 4. Restore GeoClue / timezone state
+        if let Ok(Some(journal)) = ghostpath_net::UndoJournal::load() {
             info!(
                 count = journal.actions.len(),
                 "Found undo journal actions to revert"
             );
-            if let Err(e) = ghostpath_net::GeoSpoofManager::recover_from_journal(&journal, args.dry_run) {
+            if let Err(e) =
+                ghostpath_net::GeoSpoofManager::recover_from_journal(&journal, args.dry_run)
+            {
                 tracing::warn!("Could not recover geo/timezone state from journal: {}", e);
             }
-            ghostpath_net::UndoJournal::remove_journal_file()?;
+            let _ = ghostpath_net::UndoJournal::remove_journal_file();
             info!("Undo journal cleared");
         } else {
-            // Even without journal, ensure orphaned timezone/geo backups are restored
             let mgr = ghostpath_net::GeoSpoofManager::new(args.dry_run);
             if mgr.is_spoof_active() {
                 let _ = mgr.restore();
             }
-            info!("No stale undo journal found");
+            info!("Recovery pass complete");
         }
         return Ok(());
     }
@@ -98,24 +123,47 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn harden_process() {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: prctl(PR_SET_DUMPABLE, 0) and setrlimit(RLIMIT_CORE, 0) are standard
+        // Linux process-hardening syscalls with no pointer arguments or aliasing.
+        unsafe {
+            libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0);
+            let rlim = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            libc::setrlimit(libc::RLIMIT_CORE, &rlim);
+            libc::umask(0o077);
+        }
+    }
+}
+
 async fn wait_for_shutdown() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
-        let mut sigterm =
-            signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
-        let mut sigint =
-            signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
+        let sigterm = signal(SignalKind::terminate());
+        let sigint = signal(SignalKind::interrupt());
 
-        tokio::select! {
-            _ = sigterm.recv() => {
-                info!("Received SIGTERM");
+        match (sigterm, sigint) {
+            (Ok(mut term), Ok(mut int)) => {
+                tokio::select! {
+                    _ = term.recv() => {
+                        info!("Received SIGTERM");
+                    }
+                    _ = int.recv() => {
+                        info!("Received SIGINT");
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        info!("Received Ctrl+C");
+                    }
+                }
             }
-            _ = sigint.recv() => {
-                info!("Received SIGINT");
-            }
-            _ = tokio::signal::ctrl_c() => {
-                info!("Received Ctrl+C");
+            _ => {
+                tracing::warn!("Could not register POSIX signal handlers; falling back to Ctrl+C");
+                let _ = tokio::signal::ctrl_c().await;
             }
         }
     }

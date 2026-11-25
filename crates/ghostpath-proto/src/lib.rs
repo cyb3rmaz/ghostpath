@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod amnezia;
 pub mod config_gen;
 pub mod outbound;

@@ -1,9 +1,9 @@
-use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CoreError, Result};
+use crate::fs_safe::{atomic_write_private, read_to_string_no_follow};
 use crate::models::{AppSettings, RoutingRule, ServerNode, Subscription};
 use crate::paths::GhostPaths;
 
@@ -43,12 +43,12 @@ impl GhostConfig {
         Self::load_from_path(&path)
     }
 
-    /// Loads config from explicit path
+    /// Loads config from explicit path (refuses symlinks and caps size at 16 MiB)
     pub fn load_from_path(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let content = fs::read_to_string(path)?;
+        let content = read_to_string_no_follow(path, 16 * 1024 * 1024)?;
         let config: Self = toml::from_str(&content)
             .map_err(|e| CoreError::Config(format!("Failed to parse TOML: {e}")))?;
         Ok(config)
@@ -60,22 +60,11 @@ impl GhostConfig {
         self.save_to_path(&path)
     }
 
-    /// Saves config to explicit path with safe 0600 permissions
+    /// Saves config atomically with `0700` dir and `0600` file permissions, rejecting symlinks.
     pub fn save_to_path(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let toml_str = toml::to_string_pretty(self)
             .map_err(|e| CoreError::Config(format!("Failed to serialize TOML: {e}")))?;
-        fs::write(path, toml_str)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let permissions = fs::Permissions::from_mode(0o600);
-            let _ = fs::set_permissions(path, permissions);
-        }
-
+        atomic_write_private(path, toml_str.as_bytes())?;
         Ok(())
     }
 }

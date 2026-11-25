@@ -19,8 +19,15 @@ pub struct VlessConfig {
     pub name: String,
 }
 
+const MAX_VLESS_URI_LEN: usize = 16_384;
+
 pub fn parse_vless_uri(raw: &str) -> Result<VlessConfig> {
     let raw = raw.trim();
+    if raw.len() > MAX_VLESS_URI_LEN {
+        return Err(CoreError::Config(
+            "VLESS URI exceeds max safe length".into(),
+        ));
+    }
     if !raw.starts_with("vless://") {
         return Err(CoreError::Config("URI must start with vless://".into()));
     }
@@ -29,18 +36,24 @@ pub fn parse_vless_uri(raw: &str) -> Result<VlessConfig> {
         Url::parse(raw).map_err(|e| CoreError::Config(format!("Invalid VLESS URL format: {e}")))?;
 
     let uuid = parsed.username().to_string();
-    if uuid.is_empty() {
-        return Err(CoreError::Config("VLESS URI missing UUID".into()));
+    if uuid.is_empty() || uuid.chars().any(char::is_control) {
+        return Err(CoreError::Config(
+            "VLESS URI missing or invalid UUID".into(),
+        ));
     }
 
     let host = parsed
         .host_str()
         .ok_or_else(|| CoreError::Config("VLESS URI missing host".into()))?
         .to_string();
+    if host.is_empty() || host.chars().any(char::is_control) {
+        return Err(CoreError::Config("VLESS URI invalid host".into()));
+    }
 
     let port = parsed
         .port()
-        .ok_or_else(|| CoreError::Config("VLESS URI missing port".into()))?;
+        .filter(|&p| p > 0)
+        .ok_or_else(|| CoreError::Config("VLESS URI missing or invalid port".into()))?;
 
     let name = parsed
         .fragment()

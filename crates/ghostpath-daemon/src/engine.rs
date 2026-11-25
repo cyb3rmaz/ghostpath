@@ -8,10 +8,15 @@ use ghostpath_core::geo::{
 use ghostpath_core::models::{
     ConnectionStatus, CoreEngine, NodeProtocol, RuleAction, RuleType, ServerNode,
 };
+use ghostpath_core::validators::{
+    is_public_ip, redact_url_for_log, sanitize_display_text, validate_dns_endpoint,
+    validate_iface_glob, validate_local_port, validate_mtu, validate_tun_stack,
+};
 use ghostpath_core::GhostConfig;
 use ghostpath_net::{
-    DnsGuard, DnsManager, DnsProxy, GeoSpoofGuard, GeoSpoofManager, GeoSpoofPaths, KillSwitch,
-    KillSwitchGuard, RouteGuard, RouteManager, UndoJournal,
+    CoexistenceConfig, CoexistenceGuard, CoexistenceManager, DnsGuard, DnsManager, DnsProxy,
+    GeoSpoofGuard, GeoSpoofManager, GeoSpoofPaths, KillSwitch, KillSwitchGuard, RouteGuard,
+    RouteManager, UndoJournal,
 };
 use ghostpath_proto::{parse_any_link, ManagedCoreOutbound, Outbound};
 use ghostpath_tun::TunDevice;
@@ -33,7 +38,9 @@ pub struct DaemonMetrics {
 
 pub struct ActiveSession {
     pub node: ServerNode,
+    pub interface_name: String,
     pub start_time: Instant,
+    pub coexistence_guard: Option<CoexistenceGuard>,
     pub route_guard: Option<RouteGuard>,
     pub dns_guard: Option<DnsGuard>,
     pub dns_proxy: Option<DnsProxy>,
@@ -124,202 +131,268 @@ impl DaemonEngine {
 
         info!(node_id = %node.id, name = %node.name, "Establishing GhostPath VPN tunnel");
 
-        let is_awg_protocol = node.protocol == NodeProtocol::AmneziaWG || node.protocol == NodeProtocol::WireGuard;
-        let iface_name = if is_awg_protocol { "awg-ghost0" } else { "ghost0" };
+        let is_awg_protocol =
+            node.protocol == NodeProtocol::AmneziaWG || node.protocol == NodeProtocol::WireGuard;
+        let iface_name = if is_awg_protocol {
+            "awg-ghost0"
+        } else {
+            "ghost0"
+        };
 
-        let (tun_device, route_guard, dns_guard, dns_proxy, killswitch_guard, core_process, awg_backend) =
-            if !self.dry_run {
-                if is_awg_protocol {
-                    // AWG tunnel pipeline
-                    let awg_profile = if let Some(ref raw_conf) = node.raw_link {
-                        if raw_conf.contains("[Interface]") {
-                            ghostpath_proto::amnezia::parse_awg_conf(raw_conf, &node.name).ok()
-                        } else {
-                            None
-                        }
+        let (
+            coexistence_guard,
+            tun_device,
+            route_guard,
+            dns_guard,
+            dns_proxy,
+            killswitch_guard,
+            core_process,
+            awg_backend,
+        ) = if !self.dry_run {
+            if is_awg_protocol {
+                // AWG tunnel pipeline (fail-closed)
+                let awg_profile = if let Some(ref raw_conf) = node.raw_link {
+                    if raw_conf.contains("[Interface]") {
+                        ghostpath_proto::amnezia::parse_awg_conf(raw_conf, &node.name).ok()
                     } else {
                         None
-                    }.unwrap_or_else(|| {
-                        ghostpath_proto::amnezia::AwgProfileConfig {
-                            id: node.id.clone(),
-                            name: node.name.clone(),
-                            interface: ghostpath_proto::amnezia::AwgInterfaceConfig {
-                                private_key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=".to_string(),
-                                address: vec!["10.8.0.2/24".to_string()],
-                                dns: vec![config.settings.dns_primary.clone()],
-                                mtu: Some(config.settings.mtu),
-                                obfuscation: ghostpath_proto::amnezia::AwgObfuscationConfig::default(),
-                            },
-                            peer: ghostpath_proto::amnezia::AwgPeerConfig {
-                                public_key: "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=".to_string(),
-                                preshared_key: None,
-                                endpoint: format!("{}:{}", node.host, node.port),
-                                allowed_ips: vec!["0.0.0.0/0".to_string(), "::/0".to_string()],
-                                persistent_keepalive: Some(25),
-                            },
-                        }
-                    });
-
-                    let mut journal = UndoJournal::default();
-                    let mut awg = AwgBackend::new(Some(iface_name), Some(0x4750));
-                    if let Err(e) = awg.start(&awg_profile, self.dry_run, &mut journal).await {
-                        warn!("Could not start AwgBackend: {}", e);
                     }
-
-                    let mut rm = RouteManager::new(self.dry_run);
-                    let rg = match rm.apply_routing(iface_name, config.settings.ipv6_routing) {
-                        Ok(g) => Some(g),
-                        Err(e) => {
-                            warn!("Could not apply policy routing on {iface_name}: {e}");
-                            None
-                        }
-                    };
-
-                    let mut dm = DnsManager::new(
-                        &config.settings.dns_primary,
-                        &config.settings.dns_fallback,
-                        self.dry_run,
-                    );
-                    let dg = dm.apply_dns(iface_name, &mut journal).ok();
-
-                    let ks = if config.settings.kill_switch {
-                        KillSwitch::enable(self.dry_run, config.settings.allow_lan, &mut journal).ok()
-                    } else {
-                        None
-                    };
-
-                    (None, rg, dg, None, ks, None, Some(awg))
                 } else {
-                    // 1. Open TUN device
-                    let mut tun = TunDevice::new("ghost0", config.settings.mtu);
-                    let tun_opt = match tun.open().await {
-                        Ok(()) => {
-                            info!("TUN interface ghost0 created and opened successfully");
-                            Some(tun)
+                    None
+                };
+
+                let awg_profile = match awg_profile {
+                    Some(p) => p,
+                    None => {
+                        *status = ConnectionStatus::Failed;
+                        bail!("AmneziaWG/WireGuard profile is missing a valid [Interface]/[Peer] configuration");
+                    }
+                };
+
+                let mut journal = UndoJournal::default();
+
+                // Arm kill switch first if enabled so no traffic leaks during setup
+                let ks = if config.settings.kill_switch {
+                    match KillSwitch::enable(
+                        iface_name,
+                        self.dry_run,
+                        config.settings.allow_lan,
+                        &mut journal,
+                    ) {
+                        Ok(guard) => Some(guard),
+                        Err(e) => {
+                            *status = ConnectionStatus::Failed;
+                            bail!("Failed to arm nftables kill switch: {e}");
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                let mut awg = AwgBackend::new(Some(iface_name), Some(0x4750));
+                if let Err(e) = awg.start(&awg_profile, self.dry_run, &mut journal).await {
+                    drop(ks);
+                    *status = ConnectionStatus::Failed;
+                    bail!("Failed to start AwgBackend: {e}");
+                }
+
+                let coex_cfg = CoexistenceConfig {
+                    excluded_interfaces: config.settings.excluded_interfaces.clone(),
+                    ..CoexistenceConfig::default()
+                };
+                let coex = CoexistenceManager::new(coex_cfg, self.dry_run);
+                let cg = match coex.apply_coexistence_rules(&mut journal) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        let _ = awg.stop(self.dry_run, &mut journal).await;
+                        drop(ks);
+                        *status = ConnectionStatus::Failed;
+                        bail!("Failed to apply coexistence rules: {e}");
+                    }
+                };
+
+                let mut rm = RouteManager::new(self.dry_run);
+                let rg = match rm.apply_routing(iface_name, config.settings.ipv6_routing) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        drop(cg);
+                        let _ = awg.stop(self.dry_run, &mut journal).await;
+                        drop(ks);
+                        *status = ConnectionStatus::Failed;
+                        bail!("Failed to apply policy routing on {iface_name}: {e}");
+                    }
+                };
+
+                let mut dm = DnsManager::new(
+                    &config.settings.dns_primary,
+                    &config.settings.dns_fallback,
+                    self.dry_run,
+                );
+                let dg = match dm.apply_dns(iface_name, &mut journal) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        drop(rg);
+                        drop(cg);
+                        let _ = awg.stop(self.dry_run, &mut journal).await;
+                        drop(ks);
+                        *status = ConnectionStatus::Failed;
+                        bail!("Failed to apply DNS configuration: {e}");
+                    }
+                };
+
+                let _ = journal.save();
+                (cg, None, rg, dg, None, ks, None, Some(awg))
+            } else {
+                let mut journal = UndoJournal::default();
+
+                // 1. Arm nftables kill switch BEFORE opening routes/TUN
+                let ks = if config.settings.kill_switch {
+                    match KillSwitch::enable(
+                        "ghost0",
+                        self.dry_run,
+                        config.settings.allow_lan,
+                        &mut journal,
+                    ) {
+                        Ok(guard) => {
+                            info!("nftables killswitch armed on inet ghostpath");
+                            Some(guard)
                         }
                         Err(e) => {
-                            warn!("Could not open kernel TUN interface: {}", e);
-                            None
+                            *status = ConnectionStatus::Failed;
+                            bail!("Failed to arm nftables kill switch: {e}");
                         }
-                    };
+                    }
+                } else {
+                    None
+                };
 
-                    // 2. Setup Policy Routing & Netlink rules
-                    let mut rm = RouteManager::new(self.dry_run);
-                    let rg = match rm.apply_routing("ghost0", config.settings.ipv6_routing) {
-                        Ok(guard) => {
-                            info!(
+                // 2. Open TUN device (fail-closed in production)
+                let mut tun = TunDevice::new("ghost0", config.settings.mtu);
+                if let Err(e) = tun.open().await {
+                    drop(ks);
+                    *status = ConnectionStatus::Failed;
+                    bail!("Failed to open kernel TUN interface: {e}");
+                }
+                info!("TUN interface ghost0 created and opened successfully");
+
+                // 3. Apply coexistence rules (LAN / Docker bypass)
+                let coex_cfg = CoexistenceConfig {
+                    excluded_interfaces: config.settings.excluded_interfaces.clone(),
+                    ..CoexistenceConfig::default()
+                };
+                let coex = CoexistenceManager::new(coex_cfg, self.dry_run);
+                let cg = match coex.apply_coexistence_rules(&mut journal) {
+                    Ok(g) => Some(g),
+                    Err(e) => {
+                        let _ = tun.close().await;
+                        drop(ks);
+                        *status = ConnectionStatus::Failed;
+                        bail!("Failed to apply coexistence rules: {e}");
+                    }
+                };
+
+                // 4. Setup Policy Routing & Netlink rules
+                let mut rm = RouteManager::new(self.dry_run);
+                let rg = match rm.apply_routing("ghost0", config.settings.ipv6_routing) {
+                    Ok(guard) => {
+                        info!(
                                 "Policy routing installed: fwmark 0x4750, table 5180, priority 5180/5181"
                             );
-                            Some(guard)
-                        }
-                        Err(e) => {
-                            warn!("Could not apply policy routing: {}", e);
-                            None
-                        }
-                    };
+                        Some(guard)
+                    }
+                    Err(e) => {
+                        drop(cg);
+                        let _ = tun.close().await;
+                        drop(ks);
+                        *status = ConnectionStatus::Failed;
+                        bail!("Failed to apply policy routing: {e}");
+                    }
+                };
 
-                    // 3. Configure DNS and prevent leaks
-                    let mut journal = UndoJournal::default();
-                    let mut dm = DnsManager::new(
-                        &config.settings.dns_primary,
-                        &config.settings.dns_fallback,
-                        self.dry_run,
-                    );
-                    let dg = match dm.apply_dns("ghost0", &mut journal) {
-                        Ok(guard) => {
-                            info!("Encrypted DNS routing active on ghost0 (~. domain)");
-                            Some(guard)
-                        }
-                        Err(e) => {
-                            warn!("Could not configure DNS: {}", e);
-                            None
-                        }
-                    };
+                // 5. Configure DNS and prevent leaks
+                let mut dm = DnsManager::new(
+                    &config.settings.dns_primary,
+                    &config.settings.dns_fallback,
+                    self.dry_run,
+                );
+                let dg = match dm.apply_dns("ghost0", &mut journal) {
+                    Ok(guard) => {
+                        info!("Encrypted DNS routing active on ghost0 (~. domain)");
+                        Some(guard)
+                    }
+                    Err(e) => {
+                        drop(rg);
+                        drop(cg);
+                        let _ = tun.close().await;
+                        drop(ks);
+                        *status = ConnectionStatus::Failed;
+                        bail!("Failed to configure DNS: {e}");
+                    }
+                };
 
-                    // 4. Start DoH Proxy listener
-                    let dp = DnsProxy::new(10853, config.settings.dns_primary.clone());
-                    let dp_opt = match dp.start().await {
-                        Ok(()) => {
-                            info!("Internal encrypted DNS proxy listening on 127.0.0.1:10853");
-                            Some(dp)
-                        }
-                        Err(e) => {
-                            warn!("Could not start DNS proxy: {}", e);
-                            None
-                        }
-                    };
-
-                    // 5. nftables kill switch
-                    let ks = if config.settings.kill_switch {
-                        match KillSwitch::enable(self.dry_run, config.settings.allow_lan, &mut journal) {
-                            Ok(guard) => {
-                                info!("nftables killswitch armed on inet ghostpath");
-                                Some(guard)
-                            }
-                            Err(e) => {
-                                warn!("Could not enable kill switch: {}", e);
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    };
-
-                    // 6. Launch proxy core supervisor
-                    let mut effective_rules = config.rules.clone();
-                    if config.settings.geo_spoof.enabled && config.settings.geo_spoof.strict_geo_routing {
-                        for rule in &mut effective_rules {
-                            if rule.action == RuleAction::Direct
-                                && matches!(rule.r#type, RuleType::Geoip | RuleType::Geosite)
-                                && rule.pattern != "private"
-                            {
-                                rule.action = RuleAction::Proxy;
-                            }
+                // 6. Launch proxy core supervisor (fail-closed)
+                let mut effective_rules = config.rules.clone();
+                if config.settings.geo_spoof.enabled && config.settings.geo_spoof.strict_geo_routing
+                {
+                    for rule in &mut effective_rules {
+                        if rule.action == RuleAction::Direct
+                            && matches!(rule.r#type, RuleType::Geoip | RuleType::Geosite)
+                            && rule.pattern != "private"
+                        {
+                            rule.action = RuleAction::Proxy;
                         }
                     }
-
-                    let mut core = ManagedCoreOutbound::new(
-                        config.settings.core_engine,
-                        config.settings.socks_port,
-                        config.settings.http_port,
-                        0x4750,
-                    )
-                    .with_rules(effective_rules);
-                    if let Err(e) = core.start(&node).await {
-                        warn!("Could not start managed proxy core: {}", e);
-                    }
-
-                    (tun_opt, rg, dg, dp_opt, ks, Some(core), None)
                 }
+
+                let mut core = ManagedCoreOutbound::new(
+                    config.settings.core_engine,
+                    config.settings.socks_port,
+                    config.settings.http_port,
+                    0x4750,
+                )
+                .with_rules(effective_rules);
+                if let Err(e) = core.start(&node).await {
+                    drop(dg);
+                    drop(rg);
+                    drop(cg);
+                    let _ = tun.close().await;
+                    drop(ks);
+                    *status = ConnectionStatus::Failed;
+                    bail!("Failed to start managed proxy core: {e}");
+                }
+
+                let _ = journal.save();
+                (cg, Some(tun), rg, dg, None, ks, Some(core), None)
+            }
+        } else {
+            info!("Dry-run mode: simulating tunnel setup");
+            if is_awg_protocol {
+                let mut journal = UndoJournal::default();
+                let mut awg = AwgBackend::new(Some(iface_name), Some(0x4750));
+                let profile = ghostpath_proto::amnezia::AwgProfileConfig {
+                    id: node.id.clone(),
+                    name: node.name.clone(),
+                    interface: ghostpath_proto::amnezia::AwgInterfaceConfig {
+                        private_key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=".to_string(),
+                        address: vec!["10.8.0.2/24".to_string()],
+                        dns: vec![config.settings.dns_primary.clone()],
+                        mtu: Some(config.settings.mtu),
+                        obfuscation: ghostpath_proto::amnezia::AwgObfuscationConfig::default(),
+                    },
+                    peer: ghostpath_proto::amnezia::AwgPeerConfig {
+                        public_key: "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=".to_string(),
+                        preshared_key: None,
+                        endpoint: format!("{}:{}", node.host, node.port),
+                        allowed_ips: vec!["0.0.0.0/0".to_string()],
+                        persistent_keepalive: Some(25),
+                    },
+                };
+                let _ = awg.start(&profile, true, &mut journal).await;
+                (None, None, None, None, None, None, None, Some(awg))
             } else {
-                info!("Dry-run mode: simulating tunnel setup");
-                if is_awg_protocol {
-                    let mut journal = UndoJournal::default();
-                    let mut awg = AwgBackend::new(Some(iface_name), Some(0x4750));
-                    let profile = ghostpath_proto::amnezia::AwgProfileConfig {
-                        id: node.id.clone(),
-                        name: node.name.clone(),
-                        interface: ghostpath_proto::amnezia::AwgInterfaceConfig {
-                            private_key: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=".to_string(),
-                            address: vec!["10.8.0.2/24".to_string()],
-                            dns: vec![config.settings.dns_primary.clone()],
-                            mtu: Some(config.settings.mtu),
-                            obfuscation: ghostpath_proto::amnezia::AwgObfuscationConfig::default(),
-                        },
-                        peer: ghostpath_proto::amnezia::AwgPeerConfig {
-                            public_key: "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=".to_string(),
-                            preshared_key: None,
-                            endpoint: format!("{}:{}", node.host, node.port),
-                            allowed_ips: vec!["0.0.0.0/0".to_string()],
-                            persistent_keepalive: Some(25),
-                        },
-                    };
-                    let _ = awg.start(&profile, true, &mut journal).await;
-                    (None, None, None, None, None, None, Some(awg))
-                } else {
-                    (None, None, None, None, None, None, None)
-                }
-            };
+                (None, None, None, None, None, None, None, None)
+            }
+        };
 
         let geo_spoof_guard = if config.settings.geo_spoof.enabled
             && config.settings.geo_spoof.apply_on_connect
@@ -370,7 +443,9 @@ impl DaemonEngine {
 
         let session = ActiveSession {
             node: node.clone(),
+            interface_name: iface_name.to_string(),
             start_time: Instant::now(),
+            coexistence_guard,
             route_guard,
             dns_guard,
             dns_proxy,
@@ -383,8 +458,12 @@ impl DaemonEngine {
 
         *self.session.write().await = Some(session);
         *status = ConnectionStatus::Connected;
-        self.append_log(format!("Connected to node {} ({})", node.name, node.host))
-            .await;
+        self.append_log(format!(
+            "Connected to node {} ({})",
+            sanitize_display_text(&node.name, 64),
+            node.host
+        ))
+        .await;
 
         Ok(serde_json::json!({
             "status": "connected",
@@ -430,6 +509,7 @@ impl DaemonEngine {
             drop(session.killswitch_guard.take());
             drop(session.dns_guard.take());
             drop(session.route_guard.take());
+            drop(session.coexistence_guard.take());
             drop(session.tun_device.take());
         }
 
@@ -446,7 +526,7 @@ impl DaemonEngine {
         let session = self.session.read().await;
         let config = self.config.read().await;
 
-        let (node_val, session_secs) = if let Some(ref s) = *session {
+        let (node_val, session_secs, active_iface) = if let Some(ref s) = *session {
             let secs = s.start_time.elapsed().as_secs();
             (
                 serde_json::json!({
@@ -457,9 +537,10 @@ impl DaemonEngine {
                     "port": s.node.port,
                 }),
                 secs,
+                s.interface_name.as_str(),
             )
         } else {
-            (serde_json::Value::Null, 0)
+            (serde_json::Value::Null, 0, "ghost0")
         };
 
         let status_str = match status {
@@ -504,7 +585,7 @@ impl DaemonEngine {
                 "totalUpMb": current_bytes_out as f64 / 1_000_000.0,
                 "sessionSeconds": session_secs,
             },
-            "interface": "ghost0",
+            "interface": active_iface,
             "mtu": config.settings.mtu,
             "core": config.settings.core_engine,
         }))
@@ -704,7 +785,12 @@ impl DaemonEngine {
 
     pub async fn list_nodes(&self) -> Result<serde_json::Value> {
         let config = self.config.read().await;
-        Ok(serde_json::to_value(&config.nodes)?)
+        let redacted: Vec<ServerNode> = config
+            .nodes
+            .iter()
+            .map(ServerNode::redacted_for_ipc)
+            .collect();
+        Ok(serde_json::to_value(&redacted)?)
     }
 
     pub async fn get_settings(&self) -> Result<serde_json::Value> {
@@ -734,22 +820,44 @@ impl DaemonEngine {
             config.settings.ipv6_routing = ipv6;
         }
         if let Some(stack) = patch.get("tunStack").and_then(|v| v.as_str()) {
+            validate_tun_stack(stack)?;
             config.settings.tun_stack = stack.to_string();
         }
         if let Some(mtu) = patch.get("mtu").and_then(|v| v.as_u64()) {
-            config.settings.mtu = mtu as u16;
+            let mtu_u16 = u16::try_from(mtu).map_err(|_| anyhow::anyhow!("MTU out of range"))?;
+            validate_mtu(mtu_u16)?;
+            config.settings.mtu = mtu_u16;
         }
         if let Some(socks) = patch.get("socksPort").and_then(|v| v.as_u64()) {
-            config.settings.socks_port = socks as u16;
+            let port_u16 =
+                u16::try_from(socks).map_err(|_| anyhow::anyhow!("socksPort out of range"))?;
+            validate_local_port(port_u16)?;
+            config.settings.socks_port = port_u16;
         }
         if let Some(http) = patch.get("httpPort").and_then(|v| v.as_u64()) {
-            config.settings.http_port = http as u16;
+            let port_u16 =
+                u16::try_from(http).map_err(|_| anyhow::anyhow!("httpPort out of range"))?;
+            validate_local_port(port_u16)?;
+            config.settings.http_port = port_u16;
         }
         if let Some(dns) = patch.get("dnsPrimary").and_then(|v| v.as_str()) {
-            config.settings.dns_primary = dns.to_string();
+            validate_dns_endpoint(dns)?;
+            config.settings.dns_primary = dns.trim().to_string();
         }
         if let Some(fallback) = patch.get("dnsFallback").and_then(|v| v.as_str()) {
-            config.settings.dns_fallback = fallback.to_string();
+            validate_dns_endpoint(fallback)?;
+            config.settings.dns_fallback = fallback.trim().to_string();
+        }
+        if let Some(ifaces) = patch.get("excludedInterfaces").and_then(|v| v.as_array()) {
+            let mut validated = Vec::with_capacity(ifaces.len());
+            for item in ifaces {
+                let s = item
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("excludedInterfaces entries must be strings"))?;
+                validate_iface_glob(s)?;
+                validated.push(s.to_string());
+            }
+            config.settings.excluded_interfaces = validated;
         }
         let _ = config.save();
         Ok(serde_json::to_value(&config.settings)?)
@@ -846,16 +954,10 @@ impl DaemonEngine {
         name: Option<String>,
     ) -> Result<serde_json::Value> {
         let trimmed_url = url.trim();
-        info!(url = %trimmed_url, "Fetching subscription feed");
+        let safe_url_log = redact_url_for_log(trimmed_url);
+        info!(url = %safe_url_log, "Fetching subscription feed");
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(12))
-            .build()?;
-        let resp = client.get(trimmed_url).send().await?;
-        if !resp.status().is_success() {
-            bail!("Failed to fetch subscription (HTTP {})", resp.status());
-        }
-        let body = resp.text().await?;
+        let body = safe_fetch_subscription(trimmed_url).await?;
         let nodes = ghostpath_proto::parser::subscription::parse_subscription_content(&body)?;
         if nodes.is_empty() {
             bail!("No valid server profiles found in subscription feed");
@@ -912,7 +1014,9 @@ impl DaemonEngine {
     pub async fn delete_subscription(&self, id: &str) -> Result<serde_json::Value> {
         let mut config = self.config.write().await;
         config.subscriptions.retain(|s| s.id != id);
-        config.nodes.retain(|n| n.subscription_id.as_deref() != Some(id));
+        config
+            .nodes
+            .retain(|n| n.subscription_id.as_deref() != Some(id));
         if config.active_node_id.as_deref() == Some(id) {
             config.active_node_id = config.nodes.first().map(|n| n.id.clone());
         }
@@ -931,14 +1035,7 @@ impl DaemonEngine {
             None => bail!("Subscription '{}' not found", id),
         };
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(12))
-            .build()?;
-        let resp = client.get(&sub.url).send().await?;
-        if !resp.status().is_success() {
-            bail!("Failed to refresh subscription (HTTP {})", resp.status());
-        }
-        let body = resp.text().await?;
+        let body = safe_fetch_subscription(&sub.url).await?;
         let nodes = ghostpath_proto::parser::subscription::parse_subscription_content(&body)?;
 
         let mut imported_nodes = nodes;
@@ -948,7 +1045,9 @@ impl DaemonEngine {
 
         {
             let mut config = self.config.write().await;
-            config.nodes.retain(|n| n.subscription_id.as_deref() != Some(id));
+            config
+                .nodes
+                .retain(|n| n.subscription_id.as_deref() != Some(id));
             config.nodes.extend(imported_nodes.clone());
             if let Some(s) = config.subscriptions.iter_mut().find(|s| s.id == id) {
                 s.last_updated = "Just now".to_string();
@@ -968,7 +1067,12 @@ impl DaemonEngine {
     }
 
     pub async fn add_rule(&self, mut rule_val: serde_json::Value) -> Result<serde_json::Value> {
-        if rule_val.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        if rule_val
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .is_empty()
+        {
             rule_val["id"] = serde_json::json!(format!("rule-{}", uuid::Uuid::new_v4().simple()));
         }
         if rule_val.get("type").is_none() {
@@ -1096,10 +1200,7 @@ impl DaemonEngine {
         self.get_geo_spoof_status().await
     }
 
-    pub async fn apply_geo_spoof(
-        &self,
-        country_code: Option<String>,
-    ) -> Result<serde_json::Value> {
+    pub async fn apply_geo_spoof(&self, country_code: Option<String>) -> Result<serde_json::Value> {
         let (settings, active_node) = {
             let cfg = self.config.read().await;
             let session = self.session.read().await;
@@ -1170,8 +1271,8 @@ impl DaemonEngine {
         ));
 
         self.append_log(format!(
-            "Applied system Geo/Timezone spoof: {} ({}, {:.4}, {:.4})",
-            preset.country_name, preset.timezone, preset.latitude, preset.longitude
+            "Applied system Geo/Timezone spoof: {} ({})",
+            preset.country_name, preset.timezone
         ))
         .await;
 
@@ -1235,6 +1336,99 @@ fn resolve_target_preset(
     }
 }
 
+const MAX_SUBSCRIPTION_BODY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SUBSCRIPTION_REDIRECTS: usize = 3;
+
+/// Validates a subscription URL against SSRF (loopback, private, link-local, metadata,
+/// CGNAT, ULA), enforces HTTPS, caps redirects, pins resolved IPs to mitigate DNS rebinding,
+/// and enforces a 4 MiB body limit.
+pub async fn safe_fetch_subscription(raw_url: &str) -> Result<String> {
+    let mut current_url = url::Url::parse(raw_url.trim())
+        .map_err(|e| anyhow::anyhow!("Invalid subscription URL: {e}"))?;
+
+    for _hop in 0..=MAX_SUBSCRIPTION_REDIRECTS {
+        if current_url.scheme() != "https" {
+            bail!(
+                "Subscription URL must use https:// (got '{}://')",
+                current_url.scheme()
+            );
+        }
+        if !current_url.username().is_empty() || current_url.password().is_some() {
+            bail!("Subscription URL must not embed credentials");
+        }
+        let host = current_url
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("Subscription URL missing host"))?
+            .to_string();
+        let port = current_url.port_or_known_default().unwrap_or(443);
+
+        // If host is an IP literal, validate immediately
+        let trimmed_host = host.trim_start_matches('[').trim_end_matches(']');
+        if let Ok(ip) = trimmed_host.parse::<std::net::IpAddr>() {
+            if !is_public_ip(ip) {
+                bail!("Blocked subscription fetch to non-public IP address");
+            }
+        }
+
+        // Resolve DNS and verify all returned addresses are globally routable
+        let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((trimmed_host, port))
+            .await
+            .map_err(|e| anyhow::anyhow!("DNS resolution failed for subscription host: {e}"))?
+            .collect();
+
+        if addrs.is_empty() {
+            bail!("DNS resolution returned no addresses for subscription host");
+        }
+        for addr in &addrs {
+            if !is_public_ip(addr.ip()) {
+                bail!(
+                    "Blocked subscription fetch: host resolved to non-public IP {}",
+                    addr.ip()
+                );
+            }
+        }
+
+        let pinned_addr = addrs[0];
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(12))
+            .resolve(trimmed_host, pinned_addr)
+            .build()?;
+
+        let resp = client.get(current_url.clone()).send().await?;
+        if resp.status().is_redirection() {
+            let loc = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| anyhow::anyhow!("Redirect missing Location header"))?;
+            current_url = current_url
+                .join(loc)
+                .map_err(|e| anyhow::anyhow!("Invalid redirect URL: {e}"))?;
+            continue;
+        }
+
+        if !resp.status().is_success() {
+            bail!("Failed to fetch subscription (HTTP {})", resp.status());
+        }
+        if let Some(len) = resp.content_length() {
+            if len as usize > MAX_SUBSCRIPTION_BODY_BYTES {
+                bail!("Subscription response exceeds maximum allowed size (4 MiB)");
+            }
+        }
+
+        let bytes = resp.bytes().await?;
+        if bytes.len() > MAX_SUBSCRIPTION_BODY_BYTES {
+            bail!("Subscription response exceeds maximum allowed size (4 MiB)");
+        }
+        return String::from_utf8(bytes.to_vec())
+            .map_err(|_| anyhow::anyhow!("Subscription response is not valid UTF-8"));
+    }
+
+    bail!("Subscription fetch exceeded maximum redirect limit ({MAX_SUBSCRIPTION_REDIRECTS})")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1253,11 +1447,18 @@ mod tests {
         // Attempting to connect without profiles must fail cleanly
         let no_profile_err = engine.connect(None).await;
         assert!(no_profile_err.is_err());
-        assert!(no_profile_err.unwrap_err().to_string().contains("No server profiles available"));
+        assert!(no_profile_err
+            .unwrap_err()
+            .to_string()
+            .contains("No server profiles available"));
 
         // Import a profile first
-        let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality#Test-Node";
-        let imported = engine.import_profile(uri, Some("Test Node".to_string())).await.unwrap();
+        let uri =
+            "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality#Test-Node";
+        let imported = engine
+            .import_profile(uri, Some("Test Node".to_string()))
+            .await
+            .unwrap();
         assert_eq!(imported["type"], "single_node");
 
         // Now connect succeeds
@@ -1293,7 +1494,10 @@ mod tests {
         }
         let rules_val = engine.list_rules().await.unwrap();
         let rules = rules_val.as_array().unwrap();
-        assert!(rules.is_empty(), "Fresh install must have no sample routing rules");
+        assert!(
+            rules.is_empty(),
+            "Fresh install must have no sample routing rules"
+        );
 
         let new_rule = serde_json::json!({
             "name": "Custom Test Rule",
@@ -1313,11 +1517,19 @@ mod tests {
         assert_eq!(toggled["enabled"], false);
 
         let rules_after_add = engine.list_rules().await.unwrap();
-        assert!(rules_after_add.as_array().unwrap().iter().any(|r| r["id"] == added_id));
+        assert!(rules_after_add
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == added_id));
 
         engine.delete_rule(added_id).await.unwrap();
         let rules_after_del = engine.list_rules().await.unwrap();
-        assert!(!rules_after_del.as_array().unwrap().iter().any(|r| r["id"] == added_id));
+        assert!(!rules_after_del
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == added_id));
     }
 
     #[tokio::test]
@@ -1327,8 +1539,12 @@ mod tests {
         assert_eq!(subs.as_array().unwrap().len(), 0);
 
         // Import a profile first
-        let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality#Test-Node";
-        let imported = engine.import_profile(uri, Some("Test Node".to_string())).await.unwrap();
+        let uri =
+            "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality#Test-Node";
+        let imported = engine
+            .import_profile(uri, Some("Test Node".to_string()))
+            .await
+            .unwrap();
         let node_id = imported["node"]["id"].as_str().unwrap();
 
         let ping_res = engine.ping_node(node_id).await.unwrap();
@@ -1413,7 +1629,10 @@ mod tests {
         }
 
         let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality#Frankfurt%20DE";
-        let imported = engine.import_profile(uri, Some("NL Node".to_string())).await.unwrap();
+        let imported = engine
+            .import_profile(uri, Some("NL Node".to_string()))
+            .await
+            .unwrap();
         let node_id = imported["node"]["id"].as_str().unwrap().to_string();
         {
             let mut cfg = engine.config.write().await;
@@ -1444,5 +1663,77 @@ mod tests {
         let st_disconnected = engine.get_geo_spoof_status().await.unwrap();
         assert_eq!(st_disconnected["spoofActive"], false);
         assert!(st_disconnected["appliedCountryCode"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_update_settings_rejects_invalid_values() {
+        let engine = DaemonEngine::new(true);
+        assert!(engine
+            .update_settings(serde_json::json!({ "mtu": 100 }))
+            .await
+            .is_err());
+        assert!(engine
+            .update_settings(serde_json::json!({ "socksPort": 80 }))
+            .await
+            .is_err());
+        assert!(engine
+            .update_settings(serde_json::json!({ "tunStack": "evil" }))
+            .await
+            .is_err());
+        assert!(engine
+            .update_settings(serde_json::json!({ "dnsPrimary": "-force" }))
+            .await
+            .is_err());
+        assert!(engine
+            .update_settings(serde_json::json!({ "excludedInterfaces": ["-bad"] }))
+            .await
+            .is_err());
+        assert!(engine
+            .update_settings(serde_json::json!({
+                "mtu": 1420,
+                "socksPort": 10808,
+                "tunStack": "system",
+                "dnsPrimary": "1.1.1.1"
+            }))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_nodes_redacts_raw_link() {
+        let engine = DaemonEngine::new(true);
+        let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@example.com:443?security=reality#Secret-Node";
+        engine
+            .import_profile(uri, Some("Secret Node".to_string()))
+            .await
+            .unwrap();
+        let nodes = engine.list_nodes().await.unwrap();
+        let arr = nodes.as_array().unwrap();
+        assert!(!arr.is_empty());
+        for node in arr {
+            assert!(
+                node.get("rawLink").is_none() || node["rawLink"].is_null(),
+                "list_nodes must redact rawLink over IPC"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_safe_fetch_subscription_blocks_ssrf_and_http() {
+        assert!(safe_fetch_subscription("http://example.com/sub")
+            .await
+            .is_err());
+        assert!(safe_fetch_subscription("https://127.0.0.1/sub")
+            .await
+            .is_err());
+        assert!(
+            safe_fetch_subscription("https://169.254.169.254/latest/meta-data/")
+                .await
+                .is_err()
+        );
+        assert!(safe_fetch_subscription("https://10.0.0.1/sub")
+            .await
+            .is_err());
+        assert!(safe_fetch_subscription("https://[::1]/sub").await.is_err());
     }
 }

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use ghostpath_core::error::{CoreError, Result};
+use ghostpath_core::fs_safe::{atomic_write_private, read_to_string_no_follow};
 use ghostpath_core::paths::GhostPaths;
 use serde::{Deserialize, Serialize};
 
@@ -72,12 +73,9 @@ impl UndoJournal {
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| CoreError::Serialization(e.to_string()))?;
-        fs::write(path, json)?;
+        atomic_write_private(path, json.as_bytes())?;
         Ok(())
     }
 
@@ -90,7 +88,7 @@ impl UndoJournal {
         if !path.exists() {
             return Ok(None);
         }
-        let content = fs::read_to_string(path)?;
+        let content = read_to_string_no_follow(path, 256 * 1024)?;
         let journal: Self =
             serde_json::from_str(&content).map_err(|e| CoreError::Serialization(e.to_string()))?;
         Ok(Some(journal))

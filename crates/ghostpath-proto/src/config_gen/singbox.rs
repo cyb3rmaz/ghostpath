@@ -1,6 +1,6 @@
 use ghostpath_core::models::{NodeProtocol, RoutingRule, RuleAction, RuleType, ServerNode};
 use ghostpath_core::rules::default_routing_rules;
-use ghostpath_core::Result;
+use ghostpath_core::{CoreError, Result};
 use serde_json::{json, Value};
 
 use crate::parser::ss::parse_ss_uri;
@@ -15,6 +15,10 @@ pub struct SingBoxConfigOptions {
     pub http_port: u16,
     pub routing_mark: u32,
     pub rules: Vec<RoutingRule>,
+    /// Optional TUN device interface name (e.g. `Some("ghost0")`) when running in TUN mode.
+    pub tun_interface: Option<String>,
+    pub tun_mtu: u16,
+    pub tun_stack: String,
 }
 
 impl Default for SingBoxConfigOptions {
@@ -24,6 +28,9 @@ impl Default for SingBoxConfigOptions {
             http_port: 10809,
             routing_mark: GHOST_FWMARK,
             rules: default_routing_rules(),
+            tun_interface: None,
+            tun_mtu: 1420,
+            tun_stack: "system".to_string(),
         }
     }
 }
@@ -32,13 +39,8 @@ pub fn generate_singbox_config(node: &ServerNode, options: &SingBoxConfigOptions
     let outbound = build_outbound(node, options.routing_mark)?;
 
     let mut route_rules = Vec::new();
-    let rules_to_apply = if options.rules.is_empty() {
-        default_routing_rules()
-    } else {
-        options.rules.clone()
-    };
-
-    for rule in rules_to_apply {
+    // Honor caller-supplied rules literally: never silently inject .ir direct bypasses when empty.
+    for rule in &options.rules {
         if !rule.enabled {
             continue;
         }
@@ -82,9 +84,40 @@ pub fn generate_singbox_config(node: &ServerNode, options: &SingBoxConfigOptions
         }
     }
 
+    let mut inbound_tags = vec!["socks-in".to_string(), "mixed-in".to_string()];
+    let mut inbounds = vec![
+        json!({
+            "type": "socks",
+            "tag": "socks-in",
+            "listen": "127.0.0.1",
+            "listen_port": options.socks_port
+        }),
+        json!({
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": options.http_port
+        }),
+    ];
+
+    if let Some(ref tun_iface) = options.tun_interface {
+        inbound_tags.push("tun-in".to_string());
+        inbounds.push(json!({
+            "type": "tun",
+            "tag": "tun-in",
+            "interface_name": tun_iface,
+            "address": ["10.8.0.2/24"],
+            "mtu": options.tun_mtu,
+            "stack": options.tun_stack,
+            "auto_route": false,
+            "strict_route": false,
+            "sniff": true
+        }));
+    }
+
     // Default fallback rule
     route_rules.push(json!({
-        "inbound": ["socks-in", "mixed-in"],
+        "inbound": inbound_tags,
         "outbound": "proxy"
     }));
 
@@ -93,20 +126,7 @@ pub fn generate_singbox_config(node: &ServerNode, options: &SingBoxConfigOptions
             "level": "warn",
             "timestamp": true
         },
-        "inbounds": [
-            {
-                "type": "socks",
-                "tag": "socks-in",
-                "listen": "127.0.0.1",
-                "listen_port": options.socks_port
-            },
-            {
-                "type": "mixed",
-                "tag": "mixed-in",
-                "listen": "127.0.0.1",
-                "listen_port": options.http_port
-            }
-        ],
+        "inbounds": inbounds,
         "outbounds": [
             outbound,
             {
@@ -121,7 +141,7 @@ pub fn generate_singbox_config(node: &ServerNode, options: &SingBoxConfigOptions
         ],
         "route": {
             "rules": route_rules,
-            "auto_detect_interface": true
+            "auto_detect_interface": false
         }
     });
 
@@ -231,14 +251,11 @@ fn build_outbound(node: &ServerNode, routing_mark: u32) -> Result<Value> {
         }
     }
 
-    // Generic fallback outbound
-    Ok(json!({
-        "type": "socks",
-        "tag": "proxy",
-        "server": node.host,
-        "server_port": node.port,
-        "routing_mark": routing_mark
-    }))
+    // Fail closed: never downgrade encrypted protocols to an unencrypted SOCKS outbound
+    Err(CoreError::Config(format!(
+        "Cannot generate encrypted outbound for {:?} node '{}': missing or invalid raw profile URI",
+        node.protocol, node.name
+    )))
 }
 
 #[cfg(test)]
@@ -267,5 +284,56 @@ mod tests {
             config["outbounds"][0]["tls"]["reality"]["public_key"],
             "Z3b7K_sample"
         );
+    }
+
+    #[test]
+    fn test_empty_rules_does_not_inject_ir_bypass() {
+        let uri = "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@195.181.162.88:443?type=tcp&security=reality&pbk=Z3b7K_sample#SE-01";
+        let node = parse_vless_uri(uri).unwrap().to_server_node(uri);
+
+        let options = SingBoxConfigOptions {
+            rules: Vec::new(),
+            tun_interface: Some("ghost0".to_string()),
+            ..Default::default()
+        };
+        let config = generate_singbox_config(&node, &options).unwrap();
+        let rules = config["route"]["rules"].as_array().unwrap();
+        assert!(
+            !rules
+                .iter()
+                .any(|r| r.get("geosite").is_some() || r.get("geoip").is_some()),
+            "Empty rule list must never silently inject .ir bypass rules"
+        );
+        assert!(config["inbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["type"] == "tun" && i["interface_name"] == "ghost0"));
+    }
+
+    #[test]
+    fn test_malformed_vless_fails_closed_no_socks_fallback() {
+        let node = ServerNode {
+            id: "bad-1".to_string(),
+            name: "Bad VLESS".to_string(),
+            country_code: "DE".to_string(),
+            city: "Frankfurt".to_string(),
+            country: "Germany".to_string(),
+            protocol: NodeProtocol::VLESS,
+            transport: "TCP".to_string(),
+            security: "Reality".to_string(),
+            host: "198.51.100.1".to_string(),
+            port: 443,
+            latency_ms: None,
+            pinging: None,
+            load_percent: 0,
+            subscription_id: None,
+            raw_link: Some("not-a-vless-uri".to_string()),
+        };
+
+        let err = generate_singbox_config(&node, &SingBoxConfigOptions::default()).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("missing or invalid raw profile URI"));
     }
 }

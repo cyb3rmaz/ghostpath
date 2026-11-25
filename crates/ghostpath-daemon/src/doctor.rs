@@ -306,8 +306,16 @@ impl SystemDoctor {
             details: format!(
                 "Active TZ: {}; timedatectl: {}; GeoClue2: {}",
                 active_tz,
-                if has_timedatectl { "ready" } else { "fallback (/etc/localtime)" },
-                if has_geoclue { "ready (/etc/geolocation)" } else { "not installed (timezone spoofing still works)" }
+                if has_timedatectl {
+                    "ready"
+                } else {
+                    "fallback (/etc/localtime)"
+                },
+                if has_geoclue {
+                    "ready (/etc/geolocation)"
+                } else {
+                    "not installed (timezone spoofing still works)"
+                }
             ),
             fix: if !has_geoclue {
                 Some("Optional for desktop GPS/browser geolocation spoofing: sudo apt install geoclue-2.0".to_string())

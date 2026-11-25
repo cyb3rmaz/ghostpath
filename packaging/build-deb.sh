@@ -21,6 +21,10 @@ cp "${REPO_ROOT}/target/release/ghostpath" "${STAGING}/usr/bin/"
 cp "${REPO_ROOT}/target/release/ghostpathd" "${STAGING}/usr/bin/"
 cp "${REPO_ROOT}/target/release/ghostpath-gui" "${STAGING}/usr/bin/"
 if [ -f "${REPO_ROOT}/packaging/bin/amneziawg-go" ]; then
+    if [ -f "${REPO_ROOT}/packaging/bin/amneziawg-go.sha256" ]; then
+        echo "==> Verifying amneziawg-go SHA-256 checksum..."
+        (cd "${REPO_ROOT}/packaging/bin" && sha256sum -c amneziawg-go.sha256)
+    fi
     cp "${REPO_ROOT}/packaging/bin/amneziawg-go" "${STAGING}/usr/bin/"
 elif command -v amneziawg-go >/dev/null 2>&1; then
     cp "$(command -v amneziawg-go)" "${STAGING}/usr/bin/"

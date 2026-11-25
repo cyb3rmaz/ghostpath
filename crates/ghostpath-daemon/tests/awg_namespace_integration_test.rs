@@ -148,10 +148,7 @@ AllowedIPs = 0.0.0.0/0
 
     let node_id = import_res["node"]["id"].as_str().unwrap().to_string();
 
-    let connect_res = engine
-        .connect(Some(node_id))
-        .await
-        .expect("Connect failed");
+    let connect_res = engine.connect(Some(node_id)).await.expect("Connect failed");
     assert_eq!(connect_res["status"], "connected");
     assert_eq!(connect_res["interface"], "awg-ghost0");
 

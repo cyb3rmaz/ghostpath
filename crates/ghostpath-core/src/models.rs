@@ -72,6 +72,16 @@ pub struct ServerNode {
     pub raw_link: Option<String>,
 }
 
+impl ServerNode {
+    /// Returns a copy safe to transmit across IPC or store in UI memory without embedded secrets.
+    #[must_use]
+    pub fn redacted_for_ipc(&self) -> Self {
+        let mut clone = self.clone();
+        clone.raw_link = None;
+        clone
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Subscription {

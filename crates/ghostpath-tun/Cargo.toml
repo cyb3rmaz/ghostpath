@@ -8,6 +8,9 @@ description = "Async TUN device manager and packet processor for GhostPath VPN"
 [lints]
 workspace = true
 
+[features]
+dev-mock = []
+
 [dependencies]
 ghostpath-core = { workspace = true }
 tokio = { workspace = true }

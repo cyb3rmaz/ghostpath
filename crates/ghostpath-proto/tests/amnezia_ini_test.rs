@@ -45,7 +45,10 @@ PersistentKeepalive = 25
     assert_eq!(profile.interface.obfuscation.h2, Some(2234567892));
     assert_eq!(profile.interface.obfuscation.h3, Some(3234567893));
     assert_eq!(profile.interface.obfuscation.h4, Some(4234567894));
-    assert_eq!(profile.interface.obfuscation.i1.as_deref(), Some("<b 0xa1b2c3d4>"));
+    assert_eq!(
+        profile.interface.obfuscation.i1.as_deref(),
+        Some("<b 0xa1b2c3d4>")
+    );
 
     assert_eq!(profile.peer.endpoint, "203.0.113.10:39001");
     assert_eq!(profile.peer.allowed_ips.len(), 2);
@@ -69,7 +72,7 @@ AllowedIPs = 0.0.0.0/0
 
     let profile = parse_awg_conf(raw, "plain-wg").expect("Failed to parse plain WG conf");
     assert!(!profile.is_amnezia());
-    assert_eq!(profile.interface.obfuscation.is_obfuscated(), false);
+    assert!(!profile.interface.obfuscation.is_obfuscated());
     assert_eq!(profile.interface.address, vec!["10.0.0.2/32"]);
     assert_eq!(profile.interface.dns, vec!["9.9.9.9"]);
     assert_eq!(profile.peer.endpoint, "198.51.100.1:51820");
@@ -112,7 +115,10 @@ PersistentKeepalive = 30
     assert_eq!(parsed1.peer.public_key, parsed2.peer.public_key);
     assert_eq!(parsed1.peer.endpoint, parsed2.peer.endpoint);
     assert_eq!(parsed1.peer.allowed_ips, parsed2.peer.allowed_ips);
-    assert_eq!(parsed1.peer.persistent_keepalive, parsed2.peer.persistent_keepalive);
+    assert_eq!(
+        parsed1.peer.persistent_keepalive,
+        parsed2.peer.persistent_keepalive
+    );
 }
 
 #[test]

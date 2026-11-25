@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod doctor;
 pub mod engine;
 pub mod ipc;

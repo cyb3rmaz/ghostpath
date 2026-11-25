@@ -77,7 +77,7 @@ fn is_user_in_allowed_groups(uid: u32) -> Result<bool> {
         None => return Ok(false),
     };
 
-    let allowed_group_names = ["ghostpath", "wheel", "sudo", "adm"];
+    let allowed_group_names = ["ghostpath", "wheel", "sudo"];
     for name in &allowed_group_names {
         if let Ok(Some(group)) = Group::from_name(name) {
             if group.gid == user.gid || group.mem.contains(&user.name) {

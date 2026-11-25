@@ -4,16 +4,18 @@ use ghostpath_proto::amnezia::{
 
 #[test]
 fn test_awg_obfuscation_validation_success() {
-    let mut obf = AwgObfuscationConfig::default();
-    obf.jc = Some(4);
-    obf.jmin = Some(40);
-    obf.jmax = Some(70);
-    obf.s1 = Some(15);
-    obf.s2 = Some(50);
-    obf.h1 = Some(1234567891);
-    obf.h2 = Some(2234567892);
-    obf.h3 = Some(3234567893);
-    obf.h4 = Some(4234567894);
+    let obf = AwgObfuscationConfig {
+        jc: Some(4),
+        jmin: Some(40),
+        jmax: Some(70),
+        s1: Some(15),
+        s2: Some(50),
+        h1: Some(1234567891),
+        h2: Some(2234567892),
+        h3: Some(3234567893),
+        h4: Some(4234567894),
+        ..Default::default()
+    };
 
     assert!(obf.validate().is_ok());
     assert!(obf.is_obfuscated());
@@ -21,9 +23,11 @@ fn test_awg_obfuscation_validation_success() {
 
 #[test]
 fn test_awg_obfuscation_validation_jmin_greater_than_jmax() {
-    let mut obf = AwgObfuscationConfig::default();
-    obf.jmin = Some(100);
-    obf.jmax = Some(50);
+    let obf = AwgObfuscationConfig {
+        jmin: Some(100),
+        jmax: Some(50),
+        ..Default::default()
+    };
 
     let err = obf.validate().unwrap_err();
     assert!(err.to_string().contains("Jmin cannot be greater than Jmax"));
@@ -31,12 +35,16 @@ fn test_awg_obfuscation_validation_jmin_greater_than_jmax() {
 
 #[test]
 fn test_awg_obfuscation_validation_duplicate_headers() {
-    let mut obf = AwgObfuscationConfig::default();
-    obf.h1 = Some(1000);
-    obf.h2 = Some(1000); // duplicate
+    let obf = AwgObfuscationConfig {
+        h1: Some(1000),
+        h2: Some(1000), // duplicate
+        ..Default::default()
+    };
 
     let err = obf.validate().unwrap_err();
-    assert!(err.to_string().contains("H1..H4 magic headers must be pairwise distinct"));
+    assert!(err
+        .to_string()
+        .contains("H1..H4 magic headers must be pairwise distinct"));
 }
 
 #[test]

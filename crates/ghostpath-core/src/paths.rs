@@ -52,6 +52,19 @@ impl GhostPaths {
         Self::state_dir().join("timezone.backup.json")
     }
 
+    /// Runtime directory (/run/ghostpath)
+    pub fn runtime_dir() -> PathBuf {
+        if let Ok(override_dir) = std::env::var("GHOSTPATH_RUNTIME_DIR") {
+            return PathBuf::from(override_dir);
+        }
+        PathBuf::from("/run/ghostpath")
+    }
+
+    /// Private directory for ephemeral proxy core configs (/run/ghostpath/cores)
+    pub fn runtime_core_dir() -> PathBuf {
+        Self::runtime_dir().join("cores")
+    }
+
     /// GeoClue geolocation backup (/var/lib/ghostpath/geolocation.backup.json)
     pub fn geolocation_backup() -> PathBuf {
         Self::state_dir().join("geolocation.backup.json")
@@ -59,9 +72,28 @@ impl GhostPaths {
 }
 
 fn dirs_fallback_config() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            return PathBuf::from(xdg).join("ghostpath");
+        }
+    }
     if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".config").join("ghostpath")
-    } else {
-        PathBuf::from("/tmp/ghostpath")
+        if !home.trim().is_empty() {
+            return PathBuf::from(home).join(".config").join("ghostpath");
+        }
+    }
+    // Never fall back to world-writable /tmp when HOME/XDG are unset (e.g. systemd units)
+    GhostPaths::state_dir().join("config")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dirs_fallback_never_uses_tmp() {
+        let state = GhostPaths::state_dir().join("config");
+        assert!(!state.starts_with("/tmp"));
+        assert!(!GhostPaths::runtime_core_dir().starts_with("/tmp"));
     }
 }

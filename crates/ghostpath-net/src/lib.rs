@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub const GHOST_FWMARK: u32 = 0x4750;
 pub const GHOST_ROUTING_TABLE: u32 = 5180;
 pub const GHOST_RULE_PRIO_BYPASS: u32 = 5180;

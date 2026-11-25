@@ -15,8 +15,15 @@ pub struct TrojanConfig {
     pub name: String,
 }
 
+const MAX_TROJAN_URI_LEN: usize = 16_384;
+
 pub fn parse_trojan_uri(raw: &str) -> Result<TrojanConfig> {
     let raw = raw.trim();
+    if raw.len() > MAX_TROJAN_URI_LEN {
+        return Err(CoreError::Config(
+            "Trojan URI exceeds max safe length".into(),
+        ));
+    }
     if !raw.starts_with("trojan://") {
         return Err(CoreError::Config("URI must start with trojan://".into()));
     }
@@ -25,18 +32,24 @@ pub fn parse_trojan_uri(raw: &str) -> Result<TrojanConfig> {
         .map_err(|e| CoreError::Config(format!("Invalid Trojan URL format: {e}")))?;
 
     let password = parsed.username().to_string();
-    if password.is_empty() {
-        return Err(CoreError::Config("Trojan URI missing password".into()));
+    if password.is_empty() || password.chars().any(char::is_control) {
+        return Err(CoreError::Config(
+            "Trojan URI missing or invalid password".into(),
+        ));
     }
 
     let host = parsed
         .host_str()
         .ok_or_else(|| CoreError::Config("Trojan URI missing host".into()))?
         .to_string();
+    if host.is_empty() || host.chars().any(char::is_control) {
+        return Err(CoreError::Config("Trojan URI invalid host".into()));
+    }
 
     let port = parsed
         .port()
-        .ok_or_else(|| CoreError::Config("Trojan URI missing port".into()))?;
+        .filter(|&p| p > 0)
+        .ok_or_else(|| CoreError::Config("Trojan URI missing or invalid port".into()))?;
 
     let name = parsed
         .fragment()

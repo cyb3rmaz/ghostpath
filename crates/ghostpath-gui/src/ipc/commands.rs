@@ -72,10 +72,7 @@ pub async fn handle_rpc_invoke(
         match state.ipc_client.call(method, params.clone()).await {
             Ok(res) => return Ok(res),
             Err(e) => {
-                warn!(
-                    "Live daemon IPC call [{}] failed: {}",
-                    method, e
-                );
+                warn!("Live daemon IPC call [{}] failed: {}", method, e);
                 return Err(format!("Daemon IPC call '{method}' failed: {e}"));
             }
         }

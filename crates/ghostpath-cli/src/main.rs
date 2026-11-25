@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -67,9 +69,7 @@ enum GeoAction {
     /// List available countries with timezones and coordinates
     Countries,
     /// Spoof system timezone & geolocation to a target country code (e.g. DE, US, NL)
-    Set {
-        country: String,
-    },
+    Set { country: String },
     /// Enable automatic country matching from active VPN server on connect
     MatchVpn,
     /// Restore original system timezone and geolocation immediately

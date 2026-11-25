@@ -14,8 +14,15 @@ pub struct ShadowsocksConfig {
     pub name: String,
 }
 
+const MAX_SS_URI_LEN: usize = 16_384;
+
 pub fn parse_ss_uri(raw: &str) -> Result<ShadowsocksConfig> {
     let raw = raw.trim();
+    if raw.len() > MAX_SS_URI_LEN {
+        return Err(CoreError::Config(
+            "Shadowsocks URI exceeds max safe length".into(),
+        ));
+    }
     if !raw.starts_with("ss://") {
         return Err(CoreError::Config("URI must start with ss://".into()));
     }
@@ -47,13 +54,25 @@ pub fn parse_ss_uri(raw: &str) -> Result<ShadowsocksConfig> {
         let (method, password) = userinfo_str
             .split_once(':')
             .ok_or_else(|| CoreError::Config("SS userinfo missing colon".into()))?;
+        if method.trim().is_empty() || method.chars().any(char::is_control) {
+            return Err(CoreError::Config("Invalid SS encryption method".into()));
+        }
+        if password.chars().any(char::is_control) {
+            return Err(CoreError::Config("Invalid SS password characters".into()));
+        }
 
-        let (host, port_str) = hostport
+        let (host_raw, port_str) = hostport
             .rsplit_once(':')
             .ok_or_else(|| CoreError::Config("SS hostport missing colon".into()))?;
+        let host = host_raw.trim_start_matches('[').trim_end_matches(']');
+        if host.is_empty() || host.chars().any(char::is_control) {
+            return Err(CoreError::Config("Invalid SS host".into()));
+        }
         let port: u16 = port_str
             .parse()
-            .map_err(|_| CoreError::Config("Invalid SS port".into()))?;
+            .ok()
+            .filter(|&p| p > 0)
+            .ok_or_else(|| CoreError::Config("Invalid SS port".into()))?;
 
         Ok(ShadowsocksConfig {
             method: method.to_string(),
@@ -75,13 +94,18 @@ pub fn parse_ss_uri(raw: &str) -> Result<ShadowsocksConfig> {
 
         let method = parsed.username().to_string();
         let password = parsed.password().unwrap_or_default().to_string();
+        if method.trim().is_empty() || method.chars().any(char::is_control) {
+            return Err(CoreError::Config("Invalid SS encryption method".into()));
+        }
         let host = parsed
             .host_str()
-            .ok_or_else(|| CoreError::Config("Missing host in SS URI".into()))?
+            .filter(|h| !h.is_empty() && !h.chars().any(char::is_control))
+            .ok_or_else(|| CoreError::Config("Missing or invalid host in SS URI".into()))?
             .to_string();
         let port = parsed
             .port()
-            .ok_or_else(|| CoreError::Config("Missing port in SS URI".into()))?;
+            .filter(|&p| p > 0)
+            .ok_or_else(|| CoreError::Config("Missing or invalid port in SS URI".into()))?;
 
         Ok(ShadowsocksConfig {
             method,

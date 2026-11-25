@@ -65,18 +65,37 @@ impl TunDevice {
                     Ok(())
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "Could not open /dev/net/tun (lack of CAP_NET_ADMIN/root); falling back to mock TUN device");
-                    self.is_mock = true;
-                    Ok(())
+                    #[cfg(any(test, feature = "dev-mock"))]
+                    {
+                        tracing::warn!(error = %e, "Could not open /dev/net/tun; falling back to mock TUN device (dev-mock enabled)");
+                        self.is_mock = true;
+                        Ok(())
+                    }
+                    #[cfg(not(any(test, feature = "dev-mock")))]
+                    {
+                        tracing::error!(error = %e, "Could not open /dev/net/tun (lack of CAP_NET_ADMIN/root)");
+                        Err(CoreError::Internal(format!(
+                            "Failed to open TUN device: {e}. The daemon requires CAP_NET_ADMIN."
+                        )))
+                    }
                 }
             }
         }
 
         #[cfg(not(target_os = "linux"))]
         {
-            tracing::info!("Non-Linux platform: utilizing in-memory mock TUN device");
-            self.is_mock = true;
-            Ok(())
+            #[cfg(any(test, feature = "dev-mock"))]
+            {
+                tracing::info!("Non-Linux platform: utilizing in-memory mock TUN device");
+                self.is_mock = true;
+                return Ok(());
+            }
+            #[cfg(not(any(test, feature = "dev-mock")))]
+            {
+                return Err(CoreError::Internal(
+                    "TUN device is only supported on Linux".to_string(),
+                ));
+            }
         }
     }
 
@@ -216,34 +235,44 @@ fn open_linux_tun(name: &str) -> Result<RawFd> {
 
 #[cfg(target_os = "linux")]
 fn configure_link_and_address(name: &str, mtu: u16) -> Result<()> {
+    fn run_ip(args: &[&str]) -> Result<()> {
+        let out = std::process::Command::new("ip")
+            .args(args)
+            .output()
+            .map_err(CoreError::Io)?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(CoreError::Internal(format!(
+                "ip {} failed: {}",
+                args.join(" "),
+                stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
     // 1. Set MTU
     let mtu_str = mtu.to_string();
-    let _ = std::process::Command::new("ip")
-        .args(["link", "set", "dev", name, "mtu", &mtu_str])
-        .output();
+    run_ip(&["link", "set", "dev", name, "mtu", &mtu_str])?;
 
     // 2. Assign IPv4 address: 10.8.0.2/24 peer 10.8.0.1
-    let _ = std::process::Command::new("ip")
-        .args([
-            "addr",
-            "add",
-            DEFAULT_IPV4,
-            "peer",
-            DEFAULT_IPV4_PEER,
-            "dev",
-            name,
-        ])
-        .output();
+    run_ip(&[
+        "addr",
+        "add",
+        DEFAULT_IPV4,
+        "peer",
+        DEFAULT_IPV4_PEER,
+        "dev",
+        name,
+    ])?;
 
-    // 3. Assign IPv6 address: fd00:5180::2/64
-    let _ = std::process::Command::new("ip")
-        .args(["-6", "addr", "add", DEFAULT_IPV6, "dev", name])
-        .output();
+    // 3. Assign IPv6 address: fd00:5180::2/64 (non-fatal if IPv6 is disabled)
+    if let Err(e) = run_ip(&["-6", "addr", "add", DEFAULT_IPV6, "dev", name]) {
+        tracing::warn!(error = %e, "IPv6 address assignment failed (IPv6 may be disabled)");
+    }
 
     // 4. Set link UP
-    let _ = std::process::Command::new("ip")
-        .args(["link", "set", "dev", name, "up"])
-        .output();
+    run_ip(&["link", "set", "dev", name, "up"])?;
 
     Ok(())
 }

@@ -6,7 +6,10 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use ghostpath_core::models::{CoreEngine, RoutingRule, ServerNode};
-use ghostpath_core::{CoreError, Result};
+use ghostpath_core::{
+    atomic_write_private, validate_iface_name, validate_local_port, validate_mtu,
+    validate_tun_stack, CoreError, GhostPaths, Result,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
@@ -21,20 +24,36 @@ pub struct ManagedCoreOutbound {
     http_port: u16,
     routing_mark: u32,
     rules: Vec<RoutingRule>,
+    tun_interface: Option<String>,
+    tun_mtu: u16,
+    tun_stack: String,
     child_process: Arc<Mutex<Option<Child>>>,
     config_path: PathBuf,
     active_node: Option<ServerNode>,
 }
 
+impl Drop for ManagedCoreOutbound {
+    fn drop(&mut self) {
+        if self.config_path.exists() {
+            let _ = std::fs::remove_file(&self.config_path);
+        }
+    }
+}
+
 impl ManagedCoreOutbound {
     pub fn new(engine: CoreEngine, socks_port: u16, http_port: u16, routing_mark: u32) -> Self {
-        let config_path = std::env::temp_dir().join(format!("ghostpath_core_{socks_port}.json"));
+        let nonce = uuid::Uuid::new_v4().simple();
+        let config_path =
+            GhostPaths::runtime_core_dir().join(format!("core_{socks_port}_{nonce}.json"));
         Self {
             engine,
             socks_port,
             http_port,
             routing_mark,
             rules: Vec::new(),
+            tun_interface: None,
+            tun_mtu: 1420,
+            tun_stack: "system".to_string(),
             child_process: Arc::new(Mutex::new(None)),
             config_path,
             active_node: None,
@@ -46,8 +65,105 @@ impl ManagedCoreOutbound {
         self
     }
 
+    pub fn with_tun(
+        mut self,
+        iface: impl Into<String>,
+        mtu: u16,
+        stack: impl Into<String>,
+    ) -> Self {
+        self.tun_interface = Some(iface.into());
+        self.tun_mtu = mtu;
+        self.tun_stack = stack.into();
+        self
+    }
+
     pub fn socks_addr(&self) -> SocketAddr {
         SocketAddr::from(([127, 0, 0, 1], self.socks_port))
+    }
+
+    /// Starts outbound with explicit mock permission (`false` in production so missing binaries fail closed).
+    pub async fn start_with_mock_policy(
+        &mut self,
+        node: &ServerNode,
+        allow_mock: bool,
+    ) -> Result<()> {
+        self.stop().await?;
+        validate_local_port(self.socks_port)?;
+        validate_local_port(self.http_port)?;
+        validate_mtu(self.tun_mtu)?;
+        validate_tun_stack(&self.tun_stack)?;
+        if let Some(ref iface) = self.tun_interface {
+            validate_iface_name(iface)?;
+        }
+
+        self.active_node = Some(node.clone());
+
+        let binary_name = match self.engine {
+            CoreEngine::SingBox | CoreEngine::Native => "sing-box",
+            CoreEngine::XrayCore => "xray",
+        };
+
+        let options = SingBoxConfigOptions {
+            socks_port: self.socks_port,
+            http_port: self.http_port,
+            routing_mark: self.routing_mark,
+            rules: self.rules.clone(),
+            tun_interface: self.tun_interface.clone(),
+            tun_mtu: self.tun_mtu,
+            tun_stack: self.tun_stack.clone(),
+        };
+
+        let config_json = generate_singbox_config(node, &options)?;
+        atomic_write_private(&self.config_path, config_json.to_string().as_bytes())?;
+
+        if let Some(binary_path) = resolve_trusted_binary(binary_name) {
+            tracing::info!(
+                engine = binary_name,
+                "Spawning supervised proxy core child process"
+            );
+
+            let child = Command::new(binary_path)
+                .arg("run")
+                .arg("-c")
+                .arg(&self.config_path)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|e| CoreError::Internal(format!("Failed to spawn {binary_name}: {e}")))?;
+
+            *self.child_process.lock().await = Some(child);
+
+            if let Err(err) = self.wait_for_socks_ready(Duration::from_secs(4)).await {
+                let _ = self.stop().await;
+                return Err(err);
+            }
+        } else if allow_mock {
+            #[cfg(any(test, feature = "dev-mock"))]
+            {
+                tracing::warn!(
+                    engine = binary_name,
+                    port = self.socks_port,
+                    "dev-mock enabled: core binary absent, starting test SOCKS5 responder"
+                );
+                spawn_mock_socks_listener(self.socks_port).await?;
+            }
+            #[cfg(not(any(test, feature = "dev-mock")))]
+            {
+                let _ = self.stop().await;
+                return Err(CoreError::Internal(format!(
+                    "Required proxy core binary '{binary_name}' is not installed on trusted system paths"
+                )));
+            }
+        } else {
+            let _ = self.stop().await;
+            return Err(CoreError::Internal(format!(
+                "Required proxy core binary '{binary_name}' is not installed on trusted system paths"
+            )));
+        }
+
+        tracing::info!(node = %node.name, host = %node.host, port = node.port, "Outbound proxy engine started successfully");
+        Ok(())
     }
 
     async fn wait_for_socks_ready(&self, timeout: Duration) -> Result<()> {
@@ -80,58 +196,8 @@ impl ManagedCoreOutbound {
 #[async_trait]
 impl Outbound for ManagedCoreOutbound {
     async fn start(&mut self, node: &ServerNode) -> Result<()> {
-        self.stop().await?;
-        self.active_node = Some(node.clone());
-
-        let binary_name = match self.engine {
-            CoreEngine::SingBox => "sing-box",
-            CoreEngine::XrayCore => "xray",
-            CoreEngine::Native => "sing-box",
-        };
-
-        let options = SingBoxConfigOptions {
-            socks_port: self.socks_port,
-            http_port: self.http_port,
-            routing_mark: self.routing_mark,
-            rules: self.rules.clone(),
-        };
-
-        let config_json = generate_singbox_config(node, &options)?;
-        tokio::fs::write(&self.config_path, config_json.to_string())
+        self.start_with_mock_policy(node, cfg!(any(test, feature = "dev-mock")))
             .await
-            .map_err(CoreError::Io)?;
-
-        // Check if external core binary is installed on the host
-        let has_binary = which_binary(binary_name);
-
-        if has_binary {
-            tracing::info!(engine = binary_name, config = ?self.config_path, "Spawning supervised proxy core child process");
-
-            let child = Command::new(binary_name)
-                .arg("run")
-                .arg("-c")
-                .arg(&self.config_path)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()
-                .map_err(|e| CoreError::Internal(format!("Failed to spawn {binary_name}: {e}")))?;
-
-            *self.child_process.lock().await = Some(child);
-
-            // Wait for SOCKS5 port readiness
-            self.wait_for_socks_ready(Duration::from_secs(4)).await?;
-        } else {
-            tracing::info!(
-                engine = binary_name,
-                port = self.socks_port,
-                "Core binary not found on PATH; starting built-in mock SOCKS5 responder"
-            );
-            spawn_mock_socks_listener(self.socks_port).await?;
-        }
-
-        tracing::info!(node = %node.name, host = %node.host, port = node.port, "Outbound proxy engine started successfully");
-        Ok(())
     }
 
     async fn stop(&mut self) -> Result<()> {
@@ -172,18 +238,21 @@ impl Outbound for ManagedCoreOutbound {
     }
 }
 
-fn which_binary(name: &str) -> bool {
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            let full = dir.join(name);
-            if full.is_file() {
-                return true;
-            }
+fn resolve_trusted_binary(name: &str) -> Option<PathBuf> {
+    if name.contains('/') || name.contains('\\') || name.starts_with('-') {
+        return None;
+    }
+    const TRUSTED_DIRS: &[&str] = &["/usr/bin", "/usr/local/bin", "/usr/sbin", "/bin"];
+    for dir in TRUSTED_DIRS {
+        let candidate = PathBuf::from(dir).join(name);
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
-    false
+    None
 }
 
+#[cfg(any(test, feature = "dev-mock"))]
 async fn spawn_mock_socks_listener(port: u16) -> Result<()> {
     use tokio::net::TcpListener;
 
@@ -218,7 +287,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_managed_outbound_start_and_ping() {
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("GHOSTPATH_RUNTIME_DIR", dir.path());
+
         let mut outbound = ManagedCoreOutbound::new(CoreEngine::SingBox, 10899, 10898, 0x4750);
+        assert!(!outbound
+            .config_path
+            .starts_with(std::env::temp_dir().join("ghostpath_core_10899.json")));
         let node = ServerNode {
             id: "node-test".to_string(),
             name: "Test Node".to_string(),
@@ -228,18 +303,65 @@ mod tests {
             protocol: NodeProtocol::VLESS,
             transport: "TCP".to_string(),
             security: "Reality".to_string(),
-            host: "127.0.0.1".to_string(),
+            host: "198.51.100.10".to_string(),
             port: 443,
             latency_ms: None,
             pinging: Some(false),
             load_percent: 10,
             subscription_id: None,
-            raw_link: Some("vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@127.0.0.1:443?security=reality&pbk=key123#Test".to_string()),
+            raw_link: Some("vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@198.51.100.10:443?security=reality&pbk=key123#Test".to_string()),
         };
 
         outbound.start(&node).await.unwrap();
+        assert!(outbound.config_path.exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&outbound.config_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
         let ping = outbound.ping().await.unwrap();
         assert!(ping > 0);
         outbound.stop().await.unwrap();
+        assert!(!outbound.config_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_missing_binary_fails_closed_without_mock() {
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("GHOSTPATH_RUNTIME_DIR", dir.path());
+
+        let mut outbound = ManagedCoreOutbound::new(CoreEngine::XrayCore, 10901, 10902, 0x4750);
+        let node = ServerNode {
+            id: "node-fail".to_string(),
+            name: "Fail Node".to_string(),
+            country_code: "DE".to_string(),
+            city: "Frankfurt".to_string(),
+            country: "Germany".to_string(),
+            protocol: NodeProtocol::VLESS,
+            transport: "TCP".to_string(),
+            security: "Reality".to_string(),
+            host: "198.51.100.11".to_string(),
+            port: 443,
+            latency_ms: None,
+            pinging: Some(false),
+            load_percent: 10,
+            subscription_id: None,
+            raw_link: Some("vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@198.51.100.11:443?security=reality&pbk=key123#Fail".to_string()),
+        };
+
+        // Unless xray happens to be installed on host in /usr/bin, allow_mock = false must reject fail-open
+        if resolve_trusted_binary("xray").is_none() {
+            let err = outbound
+                .start_with_mock_policy(&node, false)
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("not installed"));
+            assert!(!outbound.config_path.exists());
+        }
     }
 }

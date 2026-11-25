@@ -169,7 +169,7 @@ impl AwgObfuscationConfig {
 }
 
 /// Interface settings for an AmneziaWG or WireGuard tunnel.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AwgInterfaceConfig {
     /// Base64 encoded 32-byte Curve25519 private key
     pub private_key: String,
@@ -189,6 +189,18 @@ pub struct AwgInterfaceConfig {
     pub obfuscation: AwgObfuscationConfig,
 }
 
+impl std::fmt::Debug for AwgInterfaceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AwgInterfaceConfig")
+            .field("private_key", &"[REDACTED]")
+            .field("address", &self.address)
+            .field("dns", &self.dns)
+            .field("mtu", &self.mtu)
+            .field("obfuscation", &self.obfuscation)
+            .finish()
+    }
+}
+
 impl Zeroize for AwgInterfaceConfig {
     fn zeroize(&mut self) {
         self.private_key.zeroize();
@@ -202,7 +214,7 @@ impl Drop for AwgInterfaceConfig {
 }
 
 /// Peer connection settings for an AmneziaWG or WireGuard endpoint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AwgPeerConfig {
     /// Base64 encoded 32-byte Curve25519 public key
     pub public_key: String,
@@ -220,6 +232,21 @@ pub struct AwgPeerConfig {
     /// Keepalive interval in seconds (typical 25)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persistent_keepalive: Option<u16>,
+}
+
+impl std::fmt::Debug for AwgPeerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AwgPeerConfig")
+            .field("public_key", &self.public_key)
+            .field(
+                "preshared_key",
+                &self.preshared_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("endpoint", &self.endpoint)
+            .field("allowed_ips", &self.allowed_ips)
+            .field("persistent_keepalive", &self.persistent_keepalive)
+            .finish()
+    }
 }
 
 impl Zeroize for AwgPeerConfig {

@@ -41,8 +41,15 @@ pub struct VmessConfig {
     pub name: String,
 }
 
+const MAX_VMESS_URI_LEN: usize = 16_384;
+
 pub fn parse_vmess_uri(raw: &str) -> Result<VmessConfig> {
     let raw = raw.trim();
+    if raw.len() > MAX_VMESS_URI_LEN {
+        return Err(CoreError::Config(
+            "VMess URI exceeds max safe length".into(),
+        ));
+    }
     if !raw.starts_with("vmess://") {
         return Err(CoreError::Config("URI must start with vmess://".into()));
     }
@@ -55,14 +62,28 @@ pub fn parse_vmess_uri(raw: &str) -> Result<VmessConfig> {
     let json_val: VmessRawJson = serde_json::from_slice(&decoded_bytes)
         .map_err(|e| CoreError::Config(format!("Invalid VMess JSON: {e}")))?;
 
+    if json_val.add.trim().is_empty() || json_val.add.chars().any(char::is_control) {
+        return Err(CoreError::Config(
+            "VMess URI missing or invalid host".into(),
+        ));
+    }
+    if json_val.id.trim().is_empty() || json_val.id.chars().any(char::is_control) {
+        return Err(CoreError::Config(
+            "VMess URI missing or invalid UUID".into(),
+        ));
+    }
+
     let port: u16 = match json_val.port {
         serde_json::Value::Number(n) => n
             .as_u64()
             .and_then(|p| u16::try_from(p).ok())
+            .filter(|&p| p > 0)
             .ok_or_else(|| CoreError::Config("Invalid VMess port".into()))?,
         serde_json::Value::String(s) => s
             .parse::<u16>()
-            .map_err(|_| CoreError::Config("Invalid VMess port string".into()))?,
+            .ok()
+            .filter(|&p| p > 0)
+            .ok_or_else(|| CoreError::Config("Invalid VMess port string".into()))?,
         _ => return Err(CoreError::Config("Missing VMess port".into())),
     };
 

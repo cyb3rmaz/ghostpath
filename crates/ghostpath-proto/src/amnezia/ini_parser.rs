@@ -10,8 +10,20 @@ enum IniSection {
     Other,
 }
 
+/// Maximum INI payload accepted (512 KiB) to prevent memory/CPU exhaustion.
+pub const MAX_INI_BYTES: usize = 512 * 1024;
+/// Maximum number of lines parsed from an INI file.
+pub const MAX_INI_LINES: usize = 10_000;
+
 /// Parses an AmneziaWG or WireGuard INI-style configuration string.
 pub fn parse_awg_conf(input: &str, profile_name: &str) -> Result<AwgProfileConfig, AmneziaError> {
+    if input.len() > MAX_INI_BYTES {
+        return Err(AmneziaError::DecompressionSizeExceeded {
+            size: input.len(),
+            max_size: MAX_INI_BYTES,
+        });
+    }
+
     let mut current_section = IniSection::None;
 
     let mut private_key = None;
@@ -30,6 +42,11 @@ pub fn parse_awg_conf(input: &str, profile_name: &str) -> Result<AwgProfileConfi
     let mut saw_peer = false;
 
     for (line_num, raw_line) in input.lines().enumerate() {
+        if line_num >= MAX_INI_LINES {
+            return Err(AmneziaError::InvalidIni(format!(
+                "INI line count exceeds safety limit of {MAX_INI_LINES}"
+            )));
+        }
         let line = raw_line.trim();
 
         // Skip blank lines and comments (# or ;)
@@ -193,18 +210,19 @@ pub fn parse_awg_conf(input: &str, profile_name: &str) -> Result<AwgProfileConfi
     }
 
     if !saw_interface {
-        return Err(AmneziaError::MissingRequiredField("[Interface] section".into()));
+        return Err(AmneziaError::MissingRequiredField(
+            "[Interface] section".into(),
+        ));
     }
     if !saw_peer {
         return Err(AmneziaError::MissingRequiredField("[Peer] section".into()));
     }
 
-    let private_key = private_key
-        .ok_or_else(|| AmneziaError::MissingRequiredField("PrivateKey".into()))?;
+    let private_key =
+        private_key.ok_or_else(|| AmneziaError::MissingRequiredField("PrivateKey".into()))?;
     let public_key =
         public_key.ok_or_else(|| AmneziaError::MissingRequiredField("PublicKey".into()))?;
-    let endpoint =
-        endpoint.ok_or_else(|| AmneziaError::MissingRequiredField("Endpoint".into()))?;
+    let endpoint = endpoint.ok_or_else(|| AmneziaError::MissingRequiredField("Endpoint".into()))?;
 
     if allowed_ips.is_empty() {
         allowed_ips.push("0.0.0.0/0".to_string());
@@ -244,7 +262,10 @@ pub fn export_awg_conf(profile: &AwgProfileConfig) -> String {
 
     out.push_str("[Interface]\n");
     if !profile.interface.address.is_empty() {
-        out.push_str(&format!("Address = {}\n", profile.interface.address.join(", ")));
+        out.push_str(&format!(
+            "Address = {}\n",
+            profile.interface.address.join(", ")
+        ));
     }
     out.push_str(&format!("PrivateKey = {}\n", profile.interface.private_key));
 

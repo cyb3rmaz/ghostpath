@@ -2,8 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use ghostpath_core::error::{CoreError, Result};
+use ghostpath_core::error::Result;
+use ghostpath_core::fs_safe::{atomic_write_private, read_to_string_no_follow};
 use ghostpath_core::paths::GhostPaths;
+use ghostpath_core::validators::{validate_dns_endpoint, validate_iface_name};
 
 use crate::journal::{JournalAction, UndoJournal};
 
@@ -43,8 +45,11 @@ impl DnsManager {
         self.strategy
     }
 
-    /// Sets up DNS routing so queries go exclusively through ghost0
+    /// Sets up DNS routing so queries go exclusively through `dev`
     pub fn apply_dns(&mut self, dev: &str, journal: &mut UndoJournal) -> Result<DnsGuard> {
+        validate_iface_name(dev)?;
+        validate_dns_endpoint(&self.primary_dns)?;
+        validate_dns_endpoint(&self.fallback_dns)?;
         tracing::info!(
             strategy = ?self.strategy,
             primary = %self.primary_dns,
@@ -144,10 +149,9 @@ impl DnsManager {
     fn backup_and_write_resolv_conf(&self) -> Result<()> {
         let resolv_conf = Path::new("/etc/resolv.conf");
         if resolv_conf.exists() && !self.backup_path.exists() {
-            if let Some(parent) = self.backup_path.parent() {
-                let _ = fs::create_dir_all(parent);
+            if let Ok(existing) = read_to_string_no_follow(resolv_conf, 64 * 1024) {
+                let _ = atomic_write_private(&self.backup_path, existing.as_bytes());
             }
-            let _ = fs::copy(resolv_conf, &self.backup_path);
         }
 
         let new_content = format!(
@@ -155,7 +159,7 @@ impl DnsManager {
             self.primary_dns, self.fallback_dns
         );
 
-        fs::write(resolv_conf, new_content).map_err(CoreError::Io)?;
+        atomic_write_private(resolv_conf, new_content.as_bytes())?;
         Ok(())
     }
 

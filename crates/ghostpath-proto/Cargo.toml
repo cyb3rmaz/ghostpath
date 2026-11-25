@@ -8,6 +8,9 @@ description = "V2Ray-family protocol link parsers, config generators, and outbou
 [lints]
 workspace = true
 
+[features]
+dev-mock = []
+
 [dependencies]
 ghostpath-core = { workspace = true }
 tokio = { workspace = true }

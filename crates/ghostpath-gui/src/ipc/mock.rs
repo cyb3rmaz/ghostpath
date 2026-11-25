@@ -186,7 +186,11 @@ impl MockDaemon {
             "getGeoSpoofStatus" => Ok(state.geo_status.clone()),
             "updateGeoSpoof" => {
                 if let Some(obj) = params.as_object() {
-                    if let Some(settings) = state.geo_status.get_mut("settings").and_then(|s| s.as_object_mut()) {
+                    if let Some(settings) = state
+                        .geo_status
+                        .get_mut("settings")
+                        .and_then(|s| s.as_object_mut())
+                    {
                         for (k, v) in obj {
                             settings.insert(k.clone(), v.clone());
                         }

@@ -34,11 +34,18 @@ impl KillSwitch {
     /// When active, drops any traffic leaving non-tunnel physical interfaces
     /// unless marked with fwmark 0x4750 (the proxy core itself) or destined for
     /// local loopback / RFC1918 LAN (if allow_lan is true).
+    /// Enables the strict nftables kill switch.
+    ///
+    /// `iface_name` is the tunnel interface (e.g. `ghost0` or `awg-ghost0`)
+    /// whose outbound traffic is accepted.
     pub fn enable(
+        iface_name: &str,
         dry_run: bool,
         allow_lan: bool,
         journal: &mut UndoJournal,
     ) -> Result<KillSwitchGuard> {
+        // Validate interface name to prevent injection
+        ghostpath_core::validators::validate_iface_name(iface_name)?;
         info!(
             dry_run = dry_run,
             allow_lan = allow_lan,
@@ -50,7 +57,7 @@ impl KillSwitch {
             info!("[dry-run] nft add table inet ghostpath");
             info!("[dry-run] nft add chain inet ghostpath output {{ type filter hook output priority -10; }}");
             info!(
-                "[dry-run] nft rules installed: lo accept, mark 0x4750 accept, ghost0 accept, drop"
+                "[dry-run] nft rules installed: lo accept, mark 0x4750 accept, {iface_name} accept, drop"
             );
             journal.record(JournalAction::CreatedNftTable {
                 family: GHOST_NFT_FAMILY.to_string(),
@@ -113,7 +120,7 @@ impl KillSwitch {
             "accept",
         ])?;
 
-        // 6. Accept traffic outbound on ghost0 tunnel
+        // 6. Accept traffic outbound on the tunnel interface
         run_nft(&[
             "add",
             "rule",
@@ -121,7 +128,7 @@ impl KillSwitch {
             GHOST_NFT_TABLE,
             "output",
             "oifname",
-            "ghost0",
+            iface_name,
             "accept",
         ])?;
 
@@ -237,9 +244,17 @@ mod tests {
     #[test]
     fn test_killswitch_dry_run() {
         let mut journal = UndoJournal::default();
-        let guard = KillSwitch::enable(true, true, &mut journal).unwrap();
+        let guard = KillSwitch::enable("ghost0", true, true, &mut journal).unwrap();
         assert_eq!(journal.actions.len(), 1);
         drop(guard);
         KillSwitch::disable(true).unwrap();
+    }
+
+    #[test]
+    fn test_killswitch_rejects_bad_interface_name() {
+        let mut journal = UndoJournal::default();
+        assert!(KillSwitch::enable("../etc/passwd", true, true, &mut journal).is_err());
+        assert!(KillSwitch::enable("-force", true, true, &mut journal).is_err());
+        assert!(KillSwitch::enable("awg-ghost0", true, true, &mut journal).is_ok());
     }
 }

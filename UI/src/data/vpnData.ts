@@ -34,7 +34,7 @@ export const INITIAL_TRAFFIC_HISTORY: TrafficPoint[] = Array.from({ length: 24 }
 
 export const INITIAL_SETTINGS: AppSettings = {
   coreEngine: 'sing-box',
-  launchOnBoot: true,
+  launchOnBoot: false,
   killSwitch: true,
   ipv6Routing: false,
   allowLan: true,
@@ -42,6 +42,6 @@ export const INITIAL_SETTINGS: AppSettings = {
   mtu: 1420,
   socksPort: 10808,
   httpPort: 10809,
-  dnsPrimary: 'https://1.1.1.1/dns-query',
-  dnsFallback: 'tls://9.9.9.9:853',
+  dnsPrimary: '1.1.1.1',
+  dnsFallback: '8.8.8.8',
 };

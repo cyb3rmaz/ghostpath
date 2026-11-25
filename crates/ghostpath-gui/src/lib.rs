@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod deeplink;
 pub mod ipc;
 pub mod single_instance;

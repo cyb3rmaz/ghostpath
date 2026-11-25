@@ -1,22 +1,34 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use ghostpath_core::models::ServerNode;
-use ghostpath_core::Result;
+use ghostpath_core::{CoreError, Result};
 
 use super::ss::parse_ss_uri;
 use super::trojan::parse_trojan_uri;
 use super::vless::parse_vless_uri;
 use super::vmess::parse_vmess_uri;
 
+/// Maximum raw subscription payload accepted (4 MiB).
+pub const MAX_SUBSCRIPTION_BYTES: usize = 4 * 1024 * 1024;
+/// Maximum number of lines scanned in a subscription feed.
+pub const MAX_SUBSCRIPTION_LINES: usize = 4096;
+
 pub fn parse_subscription_content(content: &str) -> Result<Vec<ServerNode>> {
+    if content.len() > MAX_SUBSCRIPTION_BYTES {
+        return Err(CoreError::Config(format!(
+            "Subscription content exceeds max safe size ({MAX_SUBSCRIPTION_BYTES} bytes)"
+        )));
+    }
     let trimmed = content.trim();
 
     // 1. Try decoding as base64 list of URIs
     if let Ok(decoded_bytes) = BASE64.decode(trimmed.as_bytes()) {
-        if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
-            let nodes = parse_uri_list(&decoded_str);
-            if !nodes.is_empty() {
-                return Ok(nodes);
+        if decoded_bytes.len() <= MAX_SUBSCRIPTION_BYTES {
+            if let Ok(decoded_str) = String::from_utf8(decoded_bytes) {
+                let nodes = parse_uri_list(&decoded_str);
+                if !nodes.is_empty() {
+                    return Ok(nodes);
+                }
             }
         }
     }
@@ -33,14 +45,22 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<ServerNode>> {
             let mut parsed_nodes = Vec::new();
             for out in outbounds {
                 if let Some(tag) = out.get("tag").and_then(|t| t.as_str()) {
-                    let server = out
+                    let Some(server) = out
                         .get("server")
                         .and_then(|s| s.as_str())
-                        .unwrap_or("127.0.0.1");
-                    let port = out
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && !s.chars().any(char::is_control))
+                    else {
+                        continue;
+                    };
+                    let Some(port) = out
                         .get("server_port")
                         .and_then(|p| p.as_u64())
-                        .unwrap_or(443) as u16;
+                        .and_then(|p| u16::try_from(p).ok())
+                        .filter(|&p| p > 0)
+                    else {
+                        continue;
+                    };
                     let o_type = out.get("type").and_then(|t| t.as_str()).unwrap_or("vless");
 
                     let proto = match o_type {

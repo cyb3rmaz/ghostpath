@@ -24,7 +24,8 @@ Endpoint = 203.0.113.10:39001
 AllowedIPs = 0.0.0.0/0
 "#;
 
-    let parsed_profile = ghostpath_proto::amnezia::parse_awg_conf(raw_awg_conf, "Test AWG").unwrap();
+    let parsed_profile =
+        ghostpath_proto::amnezia::parse_awg_conf(raw_awg_conf, "Test AWG").unwrap();
 
     let server = AmneziaServerConfig {
         server_name: "Synthetic Amnezia Server".to_string(),
