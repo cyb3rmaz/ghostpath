@@ -172,16 +172,35 @@ impl GeoSpoofManager {
             });
         }
 
+        let (_, geoclue_ready) = self.detect_capabilities();
+        let should_apply_geo = if spoof_geolocation && !geoclue_ready {
+            if !spoof_timezone {
+                return Err(CoreError::Config(
+                    "GeoClue2 is not installed on this system. Install geoclue-2.0 or enable System Timezone spoofing."
+                        .to_string(),
+                ));
+            }
+            tracing::info!("GeoClue2 not installed on host; applying system timezone only");
+            false
+        } else {
+            spoof_geolocation
+        };
+
         if spoof_timezone {
             self.apply_timezone(&preset.timezone, &current_tz, journal)?;
         }
 
-        if spoof_geolocation {
-            self.apply_geolocation(preset, journal)?;
+        if should_apply_geo {
+            if let Err(err) = self.apply_geolocation(preset, journal) {
+                if spoof_timezone {
+                    let _ = restore_with_paths(&self.paths, false);
+                }
+                return Err(err);
+            }
         }
 
         Ok(GeoSpoofGuard {
-            active: spoof_timezone || spoof_geolocation,
+            active: spoof_timezone || should_apply_geo,
             paths: self.paths.clone(),
             dry_run: false,
         })
@@ -678,5 +697,31 @@ mod tests {
         assert!(!paths.geolocation_path.exists());
         assert!(!paths.timezone_backup_path.exists());
         drop(guard);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_apply_rolls_back_timezone_if_geolocation_fails() {
+        let dir = tempdir().unwrap();
+        let mut paths = GeoSpoofPaths::with_root(dir.path());
+        seed_zoneinfo(&paths, &["Asia/Tehran", "Europe/Berlin"]);
+        fs::create_dir_all(paths.localtime_path.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(paths.zoneinfo_dir.join("Asia/Tehran"), &paths.localtime_path)
+            .unwrap();
+        fs::write(&paths.timezone_file_path, "Asia/Tehran\n").unwrap();
+
+        // Force geolocation write to fail by pointing geolocation_path to an existing directory
+        fs::create_dir_all(&paths.geolocation_path).unwrap();
+        paths.use_systemd_tools = false;
+
+        let mgr = GeoSpoofManager::with_paths(paths.clone(), false);
+        let mut journal = UndoJournal::new();
+        let de = find_country_preset("DE").unwrap();
+        let res = mgr.apply(&de, true, true, &mut journal);
+        assert!(res.is_err());
+
+        // Timezone must have rolled back cleanly to Asia/Tehran
+        assert_eq!(mgr.read_active_timezone(), "Asia/Tehran");
+        assert!(!paths.timezone_backup_path.exists());
     }
 }
