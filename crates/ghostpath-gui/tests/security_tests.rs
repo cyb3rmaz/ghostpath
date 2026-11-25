@@ -100,4 +100,15 @@ fn test_ui_no_remote_network_links() {
             "Built dist must contain zero remote https references"
         );
     }
+
+    // Ensure no browser/web-UI HTTP or WebSocket client calls remain in UI/src
+    let api_ts = repo_root.join("UI/src/services/api.ts");
+    let api_content = fs::read_to_string(&api_ts).expect("Read UI/src/services/api.ts");
+    assert!(
+        !api_content.contains("http://127.0.0.1")
+            && !api_content.contains("http://localhost")
+            && !api_content.contains("ws://")
+            && !api_content.contains("fetch("),
+        "UI/src/services/api.ts must not contain HTTP/WebSocket web UI client calls"
+    );
 }

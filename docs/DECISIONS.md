@@ -60,7 +60,7 @@ This document records the architectural, network, and security decisions for **G
   - **Rejected Alternatives:**
     - *Electron:* Rejected due to ~150MB+ bundle size, redundant Chromium runtime, higher RAM usage, and unnecessary attack surface.
     - *Raw `wry`/`tao`:* Evaluated as fallback; Tauri 2 provides superior capabilities, plugin ecosystem (single-instance, notifications, deep link), and security sandboxing out of the box with zero runtime overhead over raw WebKitGTK.
-  - The UI connects to `ghostpathd` via a versioned API contract defined in `docs/API.md` (over WebSocket or Unix socket IPC bridge).
+  - The UI connects to `ghostpathd` via a versioned JSON-RPC API contract defined in `docs/API.md` over Tauri IPC and the authenticated Unix domain socket (`/run/ghostpath/ghostpathd.sock`).
   - Identified UI adjustments:
     - Replace hardcoded `tun0` text and logs with `ghost0`.
     - Document UI gaps (Chain mode selector, Excluded interfaces manager, full Doctor diagnostics view) in `docs/UI_INTEGRATION.md`.

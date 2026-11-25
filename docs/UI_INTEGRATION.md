@@ -39,8 +39,8 @@ A comprehensive inspection of the `UI/` folder was conducted prior to Phase 1 co
 ## 3. Integration Method Decision
 
 Per Section 9.2:
-- **Primary Integration:** We package the React app with **Tauri** in `ghostpath-gui`, which produces native Linux desktop executables and packages (`.deb`, `.rpm`, AppImage) utilizing the system's webview.
-- **Headless & Browser Mode:** For headless environments, remote servers, or users without WebKitGTK installed, `ghostpath-daemon` / `ghostpath-gui` can serve the compiled `UI/dist` on `127.0.0.1:<port>` with strict CORS, CSP, and a per-session random authentication token.
+- **Primary Integration:** We package the React app directly into `ghostpath-gui` using **Tauri 2** + WebKitGTK, compiling `UI/` into static offline assets (`UI/dist`) embedded in the native Linux desktop binary.
+- **No Web UI / No Local HTTP Server:** Browser/HTTP serving has been eliminated; the UI runs exclusively inside the offline Tauri desktop window (`connect-src 'none'`). For headless Linux servers without a desktop environment, use the `ghostpath` CLI.
 - **IPC Bridge:** Unprivileged `ghostpath-gui` communicates with privileged `ghostpathd` over the Unix domain socket `/run/ghostpath/ghostpathd.sock` using JSON-RPC messages adhering to `docs/API.md`.
 
 ---

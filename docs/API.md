@@ -1,10 +1,9 @@
 # GhostPath Daemon IPC & UI API Contract (API.md)
 
 - **Version:** `1.1.0`
-- **Protocol:** JSON-RPC 2.0 over Unix Domain Socket (`/run/ghostpath/ghostpathd.sock`) or Local WebSocket Bridge (`127.0.0.1:<port>`).
+- **Protocol:** JSON-RPC 2.0 over Unix Domain Socket (`/run/ghostpath/ghostpathd.sock`).
 - **Authentication:**
   - Local Unix Socket: Kernel-enforced `SO_PEERCRED` (UID/GID verification).
-  - WebSocket Bridge: Per-session cryptographically random bearer token via `Authorization: Bearer <token>` or query parameter `?token=<token>`.
 
 ---
 
@@ -229,9 +228,9 @@ Executes comprehensive Linux network diagnostics.
 
 ---
 
-## 3. Streaming Server-Sent Events (WebSocket / Push)
+## 3. Streaming Push Events
 
-When connected to the event stream, the server pushes notifications:
+When connected to the daemon event stream (forwarded into the native Tauri desktop shell), events follow this shape:
 
 ```json
 {
