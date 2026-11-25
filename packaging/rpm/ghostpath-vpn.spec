@@ -20,6 +20,7 @@ Requires:       iptables
 Requires:       systemd
 Requires:       webkit2gtk4.1
 Requires:       libappindicator-gtk3
+Requires:       geoclue2
 
 %description
 GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode

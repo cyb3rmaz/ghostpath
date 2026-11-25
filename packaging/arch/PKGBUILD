@@ -6,7 +6,7 @@ pkgdesc="GhostPath VPN - Native Linux desktop VPN client with reliable TUN mode"
 arch=('x86_64' 'aarch64')
 url="https://github.com/cybermaz/ghost_path"
 license=('MIT' 'Apache-2.0')
-depends=('iproute2' 'iptables' 'systemd' 'webkit2gtk-4.1' 'libappindicator-gtk3')
+depends=('iproute2' 'iptables' 'systemd' 'webkit2gtk-4.1' 'libappindicator-gtk3' 'geoclue')
 makedepends=('cargo' 'rust>=1.75' 'pkgconf' 'openssl' 'nodejs' 'npm')
 backup=('etc/ghostpath/config.toml')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")

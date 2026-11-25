@@ -54,7 +54,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Maintainer: GhostPath Team <dev@ghostpath.vpn>
-Depends: libc6, iproute2, iptables | nftables, systemd, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libappindicator3-1
+Depends: libc6, iproute2, iptables | nftables, systemd, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libappindicator3-1, geoclue-2.0
 Recommends: systemd-resolved
 Homepage: https://github.com/cybermaz/ghost_path
 Description: GhostPath VPN - Native Linux VPN client with reliable TUN mode
@@ -80,11 +80,11 @@ if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     usermod -aG ghostpath "$SUDO_USER" >/dev/null 2>&1 || true
 fi
 
-# Reload systemd and enable ghostpathd.service
+# Reload systemd and enable/restart ghostpathd.service
 if [ -d /run/systemd/system ]; then
     systemctl --system daemon-reload >/dev/null || true
     systemctl enable ghostpathd.service >/dev/null || true
-    systemctl start ghostpathd.service >/dev/null || true
+    systemctl restart ghostpathd.service >/dev/null || true
 fi
 
 # Update desktop and icon caches

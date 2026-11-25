@@ -8,7 +8,7 @@ Homepage: https://github.com/cybermaz/ghost_path
 
 Package: ghostpath-vpn
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, iproute2, iptables | nftables, systemd, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libappindicator3-1
+Depends: ${shlibs:Depends}, ${misc:Depends}, iproute2, iptables | nftables, systemd, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libappindicator3-1, geoclue-2.0
 Recommends: systemd-resolved
 Description: GhostPath VPN - Native Linux VPN client with reliable TUN mode
  GhostPath VPN provides censorship-resistant tunneling with reliable TUN mode
