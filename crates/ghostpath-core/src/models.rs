@@ -1,3 +1,4 @@
+use crate::geo::GeoSpoofSettings;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -169,6 +170,8 @@ pub struct AppSettings {
     pub dns_fallback: String,
     #[serde(default)]
     pub excluded_interfaces: Vec<String>,
+    #[serde(default)]
+    pub geo_spoof: GeoSpoofSettings,
 }
 
 impl Default for AppSettings {
@@ -190,6 +193,7 @@ impl Default for AppSettings {
                 "br-*".to_string(),
                 "virbr*".to_string(),
             ],
+            geo_spoof: GeoSpoofSettings::default(),
         }
     }
 }

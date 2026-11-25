@@ -169,3 +169,22 @@ This document records the architectural, network, and security decisions for **G
   - Introduce `TunnelBackend` trait in `ghostpath-daemon`/`ghostpath-proto` alongside the proxy `Outbound` trait to natively manage L3 WireGuard/AmneziaWG interfaces.
   - Apply socket fwmark `0x4750` on `amneziawg-go`'s UDP outbound socket to route via physical `table main` while routing system traffic into `table 5180`.
   - In `vpn://` multi-container payloads: import all supported containers (`amnezia-awg`, `amnezia-wireguard`, `amnezia-xray`, `amnezia-shadowsocks`), and report clear, honest feedback for unsupported containers (`amnezia-openvpn-cloak`, `amnezia-openvpn`, `amnezia-ipsec`).
+
+---
+
+## 10. System Geo Location & Timezone Spoofing Architecture
+
+- **Date:** 2026-11-25
+- **Status:** Approved
+- **Context:**
+  When routing traffic through a VPN server in another country, mismatches between the exit IP geolocation, the Linux OS timezone (`/etc/localtime`), and desktop/browser Geolocation API (`GeoClue2`) expose the user's true region via browser and system fingerprinting. Users also expect to pick a target country (or auto-match the connected VPN node's country) directly inside the Routing tab.
+- **Options Evaluated:**
+  - *UI placement:* Add a dedicated **Geo Location & System Timezone Spoofing** control panel inside the Routing view above **Split Tunneling & Rules**, while fixing dark-mode `<select>` contrast issues.
+  - *System Timezone mechanism:* Use `timedatectl set-timezone <IANA_TZ>` via `systemd-timedated`, with atomic symlink fallback on `/etc/localtime` -> `/usr/share/zoneinfo/<IANA_TZ>` and `/etc/timezone` on minimal systems without `systemd-timedated`. All writes are validated against an allowlist of safe zoneinfo paths and verified country presets.
+  - *System Geo Location mechanism:* Manage GeoClue2 static location using `/etc/geolocation` (4-line lat/lon/alt/accuracy specification) and a reversible drop-in `/etc/geoclue/conf.d/99-ghostpath.conf` enabling `[static-source]` and suppressing conflicting Wi-Fi/3G/IP sources while spoofing is active, then restarting `geoclue` if running.
+  - *Safety & Crash Recovery:* Record `ModifiedTimezone` and `ModifiedGeolocation` actions in `UndoJournal` (`/var/lib/ghostpath/undo_journal.json`) and save pre-existing backups under `/var/lib/ghostpath/`. RAII guards and `ghostpathd --recover` guarantee full restoration of original system timezone and GeoClue state on disconnect, quit, `SIGTERM`, or crash recovery.
+- **Decision:**
+  - Implement a shared `GeoCountryPreset` catalog and `GeoSpoofSettings` model in `ghostpath-core`.
+  - Implement reversible `GeoSpoofManager` + `GeoSpoofGuard` in `ghostpath-net` with full `--dry-run` support and `UndoJournal` integration.
+  - Enforce `ProtectSystem=strict` in `systemd/ghostpathd.service` while scoping `ReadWritePaths` explicitly for `/etc/localtime`, `/etc/timezone`, `/etc/geolocation`, and `/etc/geoclue/conf.d`.
+  - Provide both automatic match-on-connect (including `match-node` to follow the active VPN server's country) and manual Apply / Restore controls, plus optional strict GeoIP/GeoSite routing alignment.

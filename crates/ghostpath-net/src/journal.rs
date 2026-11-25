@@ -34,6 +34,14 @@ pub enum JournalAction {
         key: String,
         original_value: String,
     },
+    ModifiedTimezone {
+        backup_path: String,
+        original_timezone: String,
+    },
+    ModifiedGeolocation {
+        backup_path: String,
+        dropin_path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

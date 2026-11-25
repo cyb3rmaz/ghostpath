@@ -46,6 +46,16 @@ impl GhostPaths {
     pub fn resolv_conf_backup() -> PathBuf {
         Self::state_dir().join("resolv.conf.backup")
     }
+
+    /// Timezone backup (/var/lib/ghostpath/timezone.backup.json)
+    pub fn timezone_backup() -> PathBuf {
+        Self::state_dir().join("timezone.backup.json")
+    }
+
+    /// GeoClue geolocation backup (/var/lib/ghostpath/geolocation.backup.json)
+    pub fn geolocation_backup() -> PathBuf {
+        Self::state_dir().join("geolocation.backup.json")
+    }
 }
 
 fn dirs_fallback_config() -> PathBuf {

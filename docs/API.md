@@ -187,8 +187,20 @@ Retrieves or patches `AppSettings`:
 - `dnsFallback`: string ("8.8.8.8")
 - `excludedInterfaces`: string[]
 
-#### `listRules` / `addRule` / `deleteRule` / `toggleRule`
+#### `listRules` / `addRule` / `deleteRule` / `toggleRule` / `updateRuleAction`
 Manages split-tunnel routing rules.
+
+#### `listGeoCountries`
+Returns the built-in catalog of supported countries with IANA timezones, representative coordinates, and ISO alpha-2 codes.
+
+#### `getGeoSpoofStatus`
+Retrieves persisted `GeoSpoofSettings` plus real live OS state (`activeTimezone`, `activeGeolocation`, `spoofActive`, `backedUpTimezone`, `appliedCountryCode`, `geoclueAvailable`).
+
+#### `updateGeoSpoof`
+Updates `GeoSpoofSettings` (`enabled`, `mode`: `"manual" | "match-node"`, `countryCode`, `spoofTimezone`, `spoofGeolocation`, `applyOnConnect`, `strictGeoRouting`). When connected and `enabled` is true, updates active spoofing immediately (or restores if disabled).
+
+#### `applyGeoSpoof` / `restoreGeoSpoof`
+Manually applies system timezone and/or GeoClue spoofing for the specified or configured country, or restores the backed-up original system timezone and location.
 
 ---
 
