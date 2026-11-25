@@ -12,7 +12,7 @@ If you discover a security vulnerability in GhostPath VPN (such as a traffic/DNS
 
 Instead, report it privately to the maintainers:
 
-- **Email / Contact:** `security@ghostpath.vpn` (or via GitHub Private Vulnerability Reporting on this repository)
+- **Contact:** via GitHub Private Vulnerability Reporting on this repository
 - **What to include:**
   - Affected component (`ghostpathd`, `ghostpath-net`, `ghostpath-proto`, `ghostpath-gui`, packaging)
   - GhostPath version, Linux distribution, and kernel version
