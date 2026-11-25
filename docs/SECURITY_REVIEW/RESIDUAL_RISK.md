@@ -7,8 +7,8 @@ This document records the remaining known risks, environment limitations, and de
 1. **Live Kernel Leak & Soak Testing (`tun` + `nftables` + `systemd-resolved`):**
    - WSL2's unprivileged container/user-namespace environment does not permit `CAP_NET_ADMIN` operations against host `/dev/net/tun` or `nftables` without root/VM isolation.
    - Policy routing, DNS leak behavior under sleep/resume, and multi-hour reconnect-storm soak tests should be executed in a dedicated Ubuntu 24.04 / Fedora / Arch VM before public release.
-2. **Packaging Linters (`lintian`, `rpmlint`, `shellcheck`):**
-   - `lintian` and `shellcheck` were not pre-installed in the WSL environment and `sudo apt` required an interactive password. Run `shellcheck packaging/*.sh scripts/*.sh` and `lintian dist/ghostpath-vpn_0.1.0_amd64.deb` in CI.
+2. **RPM & Multi-Distro Packaging Verification (`rpmlint`, clean-VM tests):**
+   - `shellcheck` (0 warnings) and `lintian` were executed on the `.deb` and scripts; `rpmlint` and clean-VM install/upgrade/uninstall tests on Ubuntu/Fedora/Arch remain to be executed in CI.
 3. **Coverage-Guided Fuzzing (`cargo-fuzz` / libFuzzer):**
    - `proptest` fuzzing (`amnezia_proptest`) was run and passed, but dedicated `cargo-fuzz` libFuzzer targets with persisted corpora were not executed.
 

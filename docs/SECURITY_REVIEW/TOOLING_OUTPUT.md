@@ -162,8 +162,31 @@ $ unshare --user --net --map-root-user bash -c 'ip addr show lo && ip rule show'
 
 ---
 
-## 9. Tools Unavailable / Not Run in This Environment
+## 9. Packaging & Script Linters (`shellcheck`, `lintian`)
 
-- **`lintian`, `rpmlint`, `shellcheck`:** Not installed in the WSL environment (`sudo apt` requires interactive password).
+### `shellcheck packaging/*.sh scripts/*.sh`
+```text
+(exit 0, 0 errors, 0 warnings)
+```
+
+### `lintian dist/ghostpath-vpn_0.1.0_amd64.deb` (after packaging fixes)
+```text
+E: ghostpath-vpn: statically-linked-binary [usr/bin/amneziawg-go]
+W: ghostpath-vpn: maintainer-script-calls-systemctl [postinst:17]
+W: ghostpath-vpn: maintainer-script-calls-systemctl [postinst:18]
+W: ghostpath-vpn: maintainer-script-calls-systemctl [prerm:5]
+W: ghostpath-vpn: maintainer-script-calls-systemctl [prerm:6]
+W: ghostpath-vpn: no-manual-page [usr/bin/amneziawg-go]
+W: ghostpath-vpn: no-manual-page [usr/bin/ghostpath-gui]
+W: ghostpath-vpn: no-manual-page [usr/bin/ghostpath]
+W: ghostpath-vpn: no-manual-page [usr/bin/ghostpathd]
+```
+Fixed in `packaging/build-deb.sh`: moved systemd unit to `/usr/lib/systemd/system/`, stripped Rust binaries (`9.2M` → `8.2M`), added `copyright` and `changelog.gz`, fixed `0644` permissions on all icons, fixed maintainer email, replaced `/tmp/ghostpath-deb-staging` with `mktemp -d`, and removed hardcoded `/usr/bin/` path in `prerm`.
+
+---
+
+## 10. Tools Unavailable / Not Run in This Environment
+
+- **`rpmlint`:** Not run (RPM packaging not built in this session).
 - **`cargo-fuzz` (libFuzzer) / `ThreadSanitizer` / `AddressSanitizer`:** Replaced in this environment by `proptest` property-based fuzzing (`amnezia_proptest`) and Miri; run libFuzzer/TSan/ASan in CI.
 - **Live kernel `tun` / `nftables` packet-leak & multi-distro VM install tests:** Not executed on host network/WSL kernel; requires privileged VM/container CI runner.

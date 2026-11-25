@@ -5,21 +5,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DIST_DIR="${REPO_ROOT}/dist"
 DEB_NAME="ghostpath-vpn_0.1.0_amd64.deb"
-STAGING="/tmp/ghostpath-deb-staging"
+STAGING="$(mktemp -d)"
+trap 'rm -rf "${STAGING}"' EXIT
 
 echo "==> Preparing Debian package staging directory at ${STAGING}..."
 mkdir -p "${DIST_DIR}"
-rm -rf "${STAGING}"
 mkdir -p "${STAGING}/DEBIAN"
 mkdir -p "${STAGING}/usr/bin"
-mkdir -p "${STAGING}/lib/systemd/system"
+mkdir -p "${STAGING}/usr/lib/systemd/system"
 mkdir -p "${STAGING}/usr/share/applications"
 mkdir -p "${STAGING}/usr/share/metainfo"
+mkdir -p "${STAGING}/usr/share/doc/ghostpath-vpn"
 
-echo "==> Copying binaries..."
+echo "==> Copying and stripping binaries..."
 cp "${REPO_ROOT}/target/release/ghostpath" "${STAGING}/usr/bin/"
 cp "${REPO_ROOT}/target/release/ghostpathd" "${STAGING}/usr/bin/"
 cp "${REPO_ROOT}/target/release/ghostpath-gui" "${STAGING}/usr/bin/"
+if command -v strip >/dev/null 2>&1; then
+    strip --strip-unneeded "${STAGING}/usr/bin/ghostpath" "${STAGING}/usr/bin/ghostpathd" "${STAGING}/usr/bin/ghostpath-gui" || true
+fi
 if [ -f "${REPO_ROOT}/packaging/bin/amneziawg-go" ]; then
     if [ -f "${REPO_ROOT}/packaging/bin/amneziawg-go.sha256" ]; then
         echo "==> Verifying amneziawg-go SHA-256 checksum..."
@@ -32,8 +36,8 @@ fi
 chmod 0755 "${STAGING}/usr/bin/"*
 
 echo "==> Copying systemd service..."
-cp "${REPO_ROOT}/systemd/ghostpathd.service" "${STAGING}/lib/systemd/system/"
-chmod 0644 "${STAGING}/lib/systemd/system/ghostpathd.service"
+cp "${REPO_ROOT}/systemd/ghostpathd.service" "${STAGING}/usr/lib/systemd/system/"
+chmod 0644 "${STAGING}/usr/lib/systemd/system/ghostpathd.service"
 
 echo "==> Copying desktop launcher and AppStream metadata..."
 cp "${REPO_ROOT}/packaging/ghostpath.desktop" "${STAGING}/usr/share/applications/"
@@ -45,10 +49,33 @@ echo "==> Installing icons in all resolutions..."
 for size in 16 24 32 48 64 128 256 512; do
     mkdir -p "${STAGING}/usr/share/icons/hicolor/${size}x${size}/apps"
     cp "${REPO_ROOT}/packaging/icons/${size}x${size}.png" "${STAGING}/usr/share/icons/hicolor/${size}x${size}/apps/ghostpath.png"
+    chmod 0644 "${STAGING}/usr/share/icons/hicolor/${size}x${size}/apps/ghostpath.png"
 done
 
 mkdir -p "${STAGING}/usr/share/icons/hicolor/scalable/apps"
 cp "${REPO_ROOT}/packaging/ghostpath.svg" "${STAGING}/usr/share/icons/hicolor/scalable/apps/ghostpath.svg"
+chmod 0644 "${STAGING}/usr/share/icons/hicolor/scalable/apps/ghostpath.svg"
+
+echo "==> Writing copyright and changelog..."
+cat << 'EOF' > "${STAGING}/usr/share/doc/ghostpath-vpn/copyright"
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ghostpath-vpn
+Source: https://github.com/cybermaz/ghost_path
+
+Files: *
+Copyright: 2026 GhostPath Team
+License: MIT or Apache-2.0
+EOF
+chmod 0644 "${STAGING}/usr/share/doc/ghostpath-vpn/copyright"
+
+cat << 'EOF' | gzip -9n > "${STAGING}/usr/share/doc/ghostpath-vpn/changelog.gz"
+ghostpath-vpn (0.1.0) unstable; urgency=medium
+
+  * Initial release with security hardening and TUN/AmneziaWG support.
+
+ -- GhostPath Team <ghostpath@users.noreply.github.com>  Thu, 26 Nov 2026 00:00:00 +0000
+EOF
+chmod 0644 "${STAGING}/usr/share/doc/ghostpath-vpn/changelog.gz"
 
 echo "==> Writing control file..."
 cat << 'EOF' > "${STAGING}/DEBIAN/control"
@@ -57,7 +84,7 @@ Version: 0.1.0
 Section: net
 Priority: optional
 Architecture: amd64
-Maintainer: GhostPath Team <dev@ghostpath.vpn>
+Maintainer: GhostPath Team <ghostpath@users.noreply.github.com>
 Depends: libc6, iproute2, iptables | nftables, systemd, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libappindicator3-1, geoclue-2.0
 Recommends: systemd-resolved
 Homepage: https://github.com/cybermaz/ghost_path
@@ -114,8 +141,8 @@ if [ -d /run/systemd/system ]; then
 fi
 
 # Run recovery pass to guarantee cleanup of routing rules, DNS, and TUN
-if [ -x /usr/bin/ghostpathd ]; then
-    /usr/bin/ghostpathd --recover >/dev/null 2>&1 || true
+if command -v ghostpathd >/dev/null 2>&1; then
+    ghostpathd --recover >/dev/null 2>&1 || true
 fi
 
 exit 0
@@ -127,6 +154,3 @@ dpkg-deb --build --root-owner-group "${STAGING}" "${DIST_DIR}/${DEB_NAME}"
 
 echo "==> Debian package generated successfully at: ${DIST_DIR}/${DEB_NAME}"
 ls -lh "${DIST_DIR}/${DEB_NAME}"
-
-echo "==> Cleaning up staging..."
-rm -rf "${STAGING}"
