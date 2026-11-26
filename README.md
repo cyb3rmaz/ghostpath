@@ -88,9 +88,9 @@ See [docs/DESKTOP_APP.md](docs/DESKTOP_APP.md) for full architecture, IPC specif
 ### Pre-built Packages
 - **Debian / Ubuntu (.deb):**
   ```bash
-  sudo dpkg -i ghostpath-vpn_0.1.0_amd64.deb
-  sudo apt-get install -f
+  sudo apt install ./ghostpath-vpn_0.1.0_amd64.deb
   ```
+  > **Note:** `amneziawg-go` (AmneziaWG/WireGuard) is bundled in the `.deb`. For VLESS, VMess, Trojan, and Shadowsocks profiles, install `sing-box` into `/usr/bin/sing-box` (or `/usr/local/bin/sing-box`).
 - **Fedora / RHEL (.rpm):**
   ```bash
   sudo rpm -ivh ghostpath-vpn-0.1.0-1.x86_64.rpm
