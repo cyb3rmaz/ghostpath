@@ -70,7 +70,11 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends shellcheck || true
           shellcheck packaging/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/appimage/AppRun packaging/appimage/build-appimage.sh scripts/*.sh
-          systemd-analyze security --offline=true systemd/ghostpathd.service
+          if systemd-analyze --help | grep -q -- '--offline'; then
+            systemd-analyze security --offline=true systemd/ghostpathd.service
+          else
+            echo "systemd-analyze --offline not supported on this systemd version; skipping"
+          fi
 
       - name: Run Test Suite
         run: cargo test --workspace
