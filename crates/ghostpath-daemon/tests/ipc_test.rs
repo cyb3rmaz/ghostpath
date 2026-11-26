@@ -9,6 +9,9 @@ use tokio::net::UnixStream;
 
 #[tokio::test]
 async fn test_daemon_ipc_server_and_client_roundtrip() {
+    let cfg_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("GHOSTPATH_CONFIG_DIR", cfg_dir.path());
+
     let socket_path = PathBuf::from(format!("/tmp/ghostpath_test_{}.sock", uuid::Uuid::new_v4()));
     let engine = Arc::new(DaemonEngine::new(true)); // dry-run mode
     let server = IpcServer::new(socket_path.clone(), engine);
@@ -45,6 +48,26 @@ async fn test_daemon_ipc_server_and_client_roundtrip() {
     assert_eq!(resp.id, Some(serde_json::json!(1)));
     let result = resp.result.expect("Expected result");
     assert_eq!(result["status"], "disconnected");
+
+    // 1b. Import a VLESS profile so connect uses deterministic ghost0 interface
+    let req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(serde_json::json!(10)),
+        method: "importProfile".to_string(),
+        params: Some(serde_json::json!({
+            "raw": "vless://a83e9f14-7b21-4e92-9f41-01c9b2e83c10@198.51.100.10:443?security=reality&pbk=testkey#IPC-Test",
+            "name": "IPC Test Node"
+        })),
+    };
+    let mut msg = serde_json::to_string(&req).unwrap();
+    msg.push('\n');
+    writer.write_all(msg.as_bytes()).await.unwrap();
+
+    line.clear();
+    buf_reader.read_line(&mut line).await.unwrap();
+    let resp: JsonRpcResponse = serde_json::from_str(&line).unwrap();
+    assert_eq!(resp.id, Some(serde_json::json!(10)));
+    assert!(resp.error.is_none(), "importProfile failed: {:?}", resp.error);
 
     // 2. Test connect
     let req = JsonRpcRequest {
