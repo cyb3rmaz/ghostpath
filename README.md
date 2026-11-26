@@ -211,7 +211,7 @@ cargo test --workspace
 ## 📄 License
 
 Licensed under either of:
-- Apache License, Version 2.0 (`Apache-2.0`)
-- MIT license (`MIT`)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
