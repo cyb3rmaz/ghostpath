@@ -67,7 +67,11 @@ async fn test_daemon_ipc_server_and_client_roundtrip() {
     buf_reader.read_line(&mut line).await.unwrap();
     let resp: JsonRpcResponse = serde_json::from_str(&line).unwrap();
     assert_eq!(resp.id, Some(serde_json::json!(10)));
-    assert!(resp.error.is_none(), "importProfile failed: {:?}", resp.error);
+    assert!(
+        resp.error.is_none(),
+        "importProfile failed: {:?}",
+        resp.error
+    );
 
     // 2. Test connect
     let req = JsonRpcRequest {
