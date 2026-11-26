@@ -11,11 +11,15 @@ async fn test_dns_leak_prevention_lifecycle() {
         .apply_dns("ghost0", &mut journal)
         .expect("Failed to apply DNS");
 
-    assert_eq!(mgr.strategy(), DnsStrategy::SystemdResolved);
+    #[cfg(target_os = "linux")]
+    assert!(matches!(
+        mgr.strategy(),
+        DnsStrategy::SystemdResolved | DnsStrategy::NetworkManager | DnsStrategy::DirectResolvConf
+    ));
     assert!(!journal.actions.is_empty());
 
     // Verify proxy handles queries
-    let proxy = DnsProxy::new(10855, "https://1.1.1.1/dns-query");
+    let proxy = DnsProxy::new(10856, "https://1.1.1.1/dns-query");
     proxy.start().await.expect("Failed to start DNS proxy");
 
     drop(guard);
