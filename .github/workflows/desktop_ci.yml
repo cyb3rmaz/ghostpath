@@ -47,6 +47,8 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ matrix.os }}
 
       - name: Build UI (Offline Vite bundle)
         run: |
@@ -120,7 +122,7 @@ jobs:
       - name: Install Dependencies
         run: |
           dnf -y install \
-            git rust cargo gcc pkgconfig openssl-devel \
+            git rust cargo gcc pkgconfig openssl-devel iproute \
             webkit2gtk4.1-devel libappindicator-gtk3-devel \
             systemd-rpm-macros rpm-build nodejs npm
 
@@ -146,7 +148,7 @@ jobs:
       - name: Install Dependencies
         run: |
           pacman -Syu --noconfirm \
-            base-devel git rust cargo pkgconf openssl \
+            base-devel git rust cargo pkgconf openssl iproute2 \
             webkit2gtk-4.1 libappindicator-gtk3 nodejs npm
 
       - name: Checkout repository

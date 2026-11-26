@@ -7,7 +7,6 @@ use ghostpath_net::{
 
 #[test]
 fn test_namespace_policy_routing_and_recovery() {
-    // Check if running as root or inside an isolated network namespace
     let is_root = {
         #[cfg(unix)]
         {
@@ -19,9 +18,29 @@ fn test_namespace_policy_routing_and_recovery() {
         }
     };
 
-    if !is_root {
-        println!("Skipping privileged namespace test (running unprivileged)");
+    let opted_in = std::env::var("GHOSTPATH_NETNS_ISOLATED").as_deref() == Ok("1")
+        || std::env::var("GHOSTPATH_ALLOW_HOST_TESTS").as_deref() == Ok("1");
+
+    if !is_root || !opted_in {
+        println!(
+            "Skipping privileged namespace test (requires root + GHOSTPATH_NETNS_ISOLATED=1 or GHOSTPATH_ALLOW_HOST_TESTS=1)"
+        );
         return;
+    }
+
+    let probe = Command::new("ip")
+        .args(["link", "add", "gp_probe0", "type", "dummy"])
+        .output();
+    match probe {
+        Ok(out) if out.status.success() => {
+            let _ = Command::new("ip")
+                .args(["link", "del", "gp_probe0"])
+                .output();
+        }
+        _ => {
+            println!("Skipping privileged namespace test (CAP_NET_ADMIN or iproute2 unavailable)");
+            return;
+        }
     }
 
     println!("Running policy routing test in network namespace...");

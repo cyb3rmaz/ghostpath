@@ -17,9 +17,29 @@ fn test_wireguard_coexistence_and_chaining() {
         }
     };
 
-    if !is_root {
-        println!("Skipping privileged WireGuard coexistence test");
+    let opted_in = std::env::var("GHOSTPATH_NETNS_ISOLATED").as_deref() == Ok("1")
+        || std::env::var("GHOSTPATH_ALLOW_HOST_TESTS").as_deref() == Ok("1");
+
+    if !is_root || !opted_in {
+        println!(
+            "Skipping privileged WireGuard coexistence test (requires root + GHOSTPATH_NETNS_ISOLATED=1 or GHOSTPATH_ALLOW_HOST_TESTS=1)"
+        );
         return;
+    }
+
+    let probe = Command::new("ip")
+        .args(["link", "add", "gp_probe1", "type", "dummy"])
+        .output();
+    match probe {
+        Ok(out) if out.status.success() => {
+            let _ = Command::new("ip")
+                .args(["link", "del", "gp_probe1"])
+                .output();
+        }
+        _ => {
+            println!("Skipping privileged WireGuard coexistence test (CAP_NET_ADMIN or iproute2 unavailable)");
+            return;
+        }
     }
 
     println!("Starting WireGuard-over-tunnel coexistence integration test...");
