@@ -9,6 +9,10 @@
 
 Unlike conventional VPN clients that suffer from routing loops, DNS leaks, and systemd-resolved conflicts on Linux, GhostPath VPN employs kernel-level policy routing, socket fwmark exclusion, strict encrypted DNS tunneling, robust multi-VPN coexistence, and full support for **AmneziaVPN / AmneziaWG obfuscated tunnels**.
 
+<p align="center">
+  <img src="docs/screenshots/main-menu.png" alt="GhostPath VPN Main Menu" width="840" />
+</p>
+
 ---
 
 ## 🎯 Key Problems Solved
