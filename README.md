@@ -86,6 +86,8 @@ See [docs/DESKTOP_APP.md](docs/DESKTOP_APP.md) for full architecture, IPC specif
 ## 🚀 Installation & Packaging
 
 ### Pre-built Packages
+Download the latest `.deb` and `.AppImage` installers (with `SHA256SUMS.txt`) from the [GitHub Releases](../../releases) page.
+
 - **Debian / Ubuntu (.deb):**
   ```bash
   sudo apt install ./ghostpath-vpn_0.1.0_amd64.deb
